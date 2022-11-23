@@ -1,0 +1,25 @@
+digraph "packages" {
+rankdir=BT
+charset="utf-8"
+"NF4HEP" [color="black", label="NF4HEP", shape="box", style="solid"];
+"NF4HEP.base" [color="black", label="NF4HEP.base", shape="box", style="solid"];
+"NF4HEP.corner" [color="black", label="NF4HEP.corner", shape="box", style="solid"];
+"NF4HEP.data" [color="black", label="NF4HEP.data", shape="box", style="solid"];
+"NF4HEP.distributions" [color="black", label="NF4HEP.distributions", shape="box", style="solid"];
+"NF4HEP.maf" [color="black", label="NF4HEP.maf", shape="box", style="solid"];
+"NF4HEP.nf" [color="black", label="NF4HEP.nf", shape="box", style="solid"];
+"NF4HEP.resources" [color="black", label="NF4HEP.resources", shape="box", style="solid"];
+"NF4HEP.utils" [color="black", label="NF4HEP.utils", shape="box", style="solid"];
+"NF4HEP" -> "NF4HEP.base" [arrowhead="open", arrowtail="none"];
+"NF4HEP" -> "NF4HEP.data" [arrowhead="open", arrowtail="none"];
+"NF4HEP" -> "NF4HEP.distributions" [arrowhead="open", arrowtail="none"];
+"NF4HEP" -> "NF4HEP.maf" [arrowhead="open", arrowtail="none"];
+"NF4HEP" -> "NF4HEP.nf" [arrowhead="open", arrowtail="none"];
+"NF4HEP" -> "NF4HEP.resources" [arrowhead="open", arrowtail="none"];
+"NF4HEP.base" -> "NF4HEP" [arrowhead="open", arrowtail="none"];
+"NF4HEP.data" -> "NF4HEP" [arrowhead="open", arrowtail="none"];
+"NF4HEP.maf" -> "NF4HEP" [arrowhead="open", arrowtail="none"];
+"NF4HEP.nf" -> "NF4HEP" [arrowhead="open", arrowtail="none"];
+"NF4HEP.nf" -> "NF4HEP.corner" [arrowhead="open", arrowtail="none"];
+"NF4HEP.utils" -> "NF4HEP" [arrowhead="open", arrowtail="none"];
+}

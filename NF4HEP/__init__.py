@@ -1,19 +1,50 @@
 import sys
 from os import path
+
 sys.dont_write_bytecode = True
 
-from . import base, utils, corner
-from .verbosity import Verbosity, print
-from .resources import Resources
-from .distributions import Distributions
-from .base import Name, FileManager, ParsManager, Predictions, Figures, Inference, Plots
-from .nf import NF, NFFileManager, NFParsManager, NFPredictions
-from .data import Data, DataFileManager, DataParsManager, DataPredictions
-from .maf import MAFNetwork_default, MAFNetwork_custom, MAFBijector_default, MAFBijector_custom, MAFFlow
-from .cspline import CSplineNetwork, CSplineBijector, CSplineFlow
-from .realnvp import RealNVPNetwork, RealNVPBijector, RealNVPFlow
-from .rqspline import RQSplineNetwork_default, RQSplineNetwork_custom, RQSplineBijector_default, RQSplineBijector_custom, RQSplineFlow
-mplstyle_path = path.join(path.split(path.realpath(__file__))[0],"matplotlib.mplstyle")
+from . import utils
+from .utils.verbosity import print, Verbosity
+from . import bijectors
+from . import base
+#from . import inputs
+from .inputs import data, distributions
+from . import nf
+
+#from . import base
+#import bijectors
+#import base
+#import nf
+#from . import bijectors
+#from . import inputs
+#from . import utils
+#from . import nf
+#from .utils.verbosity import print
+
+#import bijectors
+#import inputs
+#import utils
+
+#from . import base
+#from . import inference
+#from .base import Name, FileManager, ParsInput, ParsManager, Predictions, Figures, Inference, Plots
+#from .inference import corner
+#from .inference import inference
+#from .inference import plots
+#from .inputs import data
+#from .inputs.distributions import Distributions
+#from .utils.resources import Resources
+#from .utils import utils
+#from .utils.verbosity import Verbosity, print
+
+#from .nf import NF, NFFileManager, NFParsManager, NFPredictions
+#from .data import Data, DataFileManager, DataParsManager, DataPredictions
+#
+#from .cspline import CSplineNetwork, CSplineBijector, CSplineFlow
+#from .realnvp import RealNVPNetwork, RealNVPBijector, RealNVPFlow
+#from .rqspline import RQSplineNetwork_default, RQSplineNetwork_custom, RQSplineBijector_default, RQSplineBijector_custom, RQSplineFlow
+#
+
 
 #from .DNNLik import DNNLik
 #from . import files

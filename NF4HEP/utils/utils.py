@@ -408,23 +408,96 @@ def dict_structure(dic):
                             res[i] = "..."
     return res
 
-def compare_objects(obj1,obj2,string="",excluded_attrs=[],verbose=False):
+def inspect_object(obj: Any,
+                   get_types: bool = False,
+                   types_str: bool = True
+                  ) -> Dict[str,Dict[str,Any]]:
+    if get_types:
+        if types_str:
+            attrs = {k: [str(type(v)),v] for k,v in list(obj.__dict__.items())}
+            meths = {x: [str(type(getattr(obj, x))),getattr(obj, x)] for x in dir(obj) if callable(getattr(obj, x))}
+            props = {x: [str(type(getattr(obj, x))),getattr(obj, x)] for x in dir(obj) if not callable(getattr(obj, x))}
+        else:
+            attrs = {k: [type(v),v] for k,v in list(obj.__dict__.items())}
+            meths = {x: [type(getattr(obj, x)),getattr(obj, x)] for x in dir(obj) if callable(getattr(obj, x))}
+            props = {x: [type(getattr(obj, x)),getattr(obj, x)] for x in dir(obj) if not callable(getattr(obj, x))}
+    else:
+        attrs = {k: v for k,v in list(obj.__dict__.items())}
+        meths = {x: getattr(obj, x) for x in dir(obj) if callable(getattr(obj, x))}
+        props = {x: getattr(obj, x) for x in dir(obj) if not callable(getattr(obj, x))}
+    for x in attrs.keys():
+        if x in list(meths.keys()):
+            meths.pop(x)
+        if x in list(props.keys()):
+            props.pop(x)
+    private_attrs = {k: v for k,v in attrs.items() if k.startswith("_")}
+    public_attrs = {k: v for k,v in attrs.items() if not k.startswith("_")}
+    builtin_props = {k: v for k,v in props.items() if k.endswith("__")}
+    private_props = {k: v for k,v in props.items() if k.startswith("_")}
+    for x in builtin_props.keys():
+        if x in list(private_props.keys()):
+            private_props.pop(x)
+    public_props = {k: v for k,v in props.items() if not k.startswith("_")}
+    builtin_meths = {k: v for k,v in meths.items() if k.endswith("__")}
+    private_meths = {k: v for k,v in meths.items() if k.startswith("_")}
+    for x in builtin_meths.keys():
+        if x in list(private_meths.keys()):
+          private_meths.pop(x)
+    public_meths = {k: v for k,v in meths.items() if not k.startswith("_")}
+    result = {"private attributes": private_attrs, 
+              "public attributes": public_attrs,
+              "builtin properties": builtin_props,
+              "private properties": private_props,
+              "public properties": public_props,
+              "builtin methods": builtin_meths, 
+              "private methods": private_meths, 
+              "public methods": public_meths}
+    return result
+
+def compare_objects(obj1,obj2,string="",only_dict=True,excluded_attrs=[],strong_exclusion=True,verbose=False):
     verbose_sub = verbose
     if verbose < 0:
         verbose_sub = 0
     print("Comparing obejects", string, ".", show = verbose_sub)
-    dict1=obj1.__dict__
-    dict2=obj2.__dict__
-    diffs = compare_dictionaries(dict1,dict2,string,excluded_attrs,verbose=verbose)
+    if only_dict:
+        dict1=obj1.__dict__
+        dict2=obj2.__dict__
+    else:
+        dict1 = dic_minus_keys(inspect_object(obj1, get_types=True, types_str=True),["builtin properties","builtin methods"])
+        dict2 = dic_minus_keys(inspect_object(obj2, get_types=True, types_str=True),["builtin properties","builtin methods"])
+    diffs = compare_dictionaries(dict1,dict2,string,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
     return diffs
     
-def compare_dictionaries(dict1,dict2,string="",excluded_attrs=[],verbose=False):
+def compare_dictionaries(dict1,dict2,string="",only_dict=True,excluded_attrs=[],strong_exclusion=True,verbose=False):
     verbose_sub = verbose
     if verbose < 0:
         verbose_sub = 0
-    dict1 = dic_minus_keys(dict1,excluded_attrs)
-    dict2 = dic_minus_keys(dict2,excluded_attrs)    
     print("Comparing dictionaries", string, ".", show = verbose_sub)
+    dict1tmp = dic_minus_keys(dict1,excluded_attrs)
+    dict2tmp = dic_minus_keys(dict2,excluded_attrs)
+    dict1_removed = list(set(dict1.keys())-set(dict1tmp.keys()))
+    dict2_removed = list(set(dict2.keys())-set(dict2tmp.keys()))
+    if dict1_removed != [] or dict2_removed != []:
+        for k in dict1_removed:
+            string_print = string + " - " + str(k)
+            #if "-" in string:
+            #    string_print = string + " - " + str(k)
+            #else:
+            #    string_print = " - "+str(k)
+            if k in dict2_removed:
+                print("!!!!!> EXCLUDED: ",string_print,": Values are",dict1[k],"and",dict2[k],".\n", show = verbose)
+            else:
+                print("!!!!!> EXCLUDED: ",string_print,"(only present in firse dictionary)",": Value is",dict1[k],".\n", show = verbose)
+        for k in dict2_removed:
+            string_print = string + " - " + str(k)
+            #if "-" in string:
+            #    string_print = string
+            #else:
+            #    string_print = str(k)
+            if k not in dict1_removed:
+                print("!!!!!> EXCLUDED: ",string_print,"(only present in second dictionary)",": Value is",dict2[k],".\n", show = verbose)
+    dict1 = dict1tmp
+    dict2 = dict2tmp
     diffs = []
     def intersection(lst1, lst2): 
         lst3 = [value for value in lst1 if value in lst2] 
@@ -435,10 +508,10 @@ def compare_dictionaries(dict1,dict2,string="",excluded_attrs=[],verbose=False):
     diff2 = list(set(keys2) - set(keys2))
     keys = intersection(keys1, keys2)
     if diff1 != []:
-        print("DIFFERENCE: ",string,": Keys",diff1,"are in dict1 but not in dict2.\n", show = verbose)
+        print("=====> DIFFERENCE: ",string,": Keys",diff1,"are in dict1 but not in dict2.\n", show = verbose)
         diffs.append([string,keys1,keys2])
     if diff2 != []:
-        print("DIFFERENCE: ",string,": Keys",diff2,"are in dict2 but not in dict1.\n", show = verbose)
+        print("=====> DIFFERENCE: ",string,": Keys",diff2,"are in dict2 but not in dict1.\n", show = verbose)
         diffs.append([string,keys1,keys2])
     #if diff1 == [] and diff2 == []:
     #    print(tabstr,"OK: Keys in the two dictionaries are equal.")
@@ -455,31 +528,84 @@ def compare_dictionaries(dict1,dict2,string="",excluded_attrs=[],verbose=False):
             pass
         if areobjects:
             print("Keys", prestring, "are objects.", show = verbose_sub)
-            diffs=diffs + compare_objects(dict1[k],dict2[k],prestring,excluded_attrs=excluded_attrs,verbose=verbose)
+            diffs=diffs + compare_objects(dict1[k],dict2[k],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,verbose=verbose)
         elif isinstance(dict1[k],dict) and isinstance(dict2[k],dict):
             print("Keys", prestring, "are dictionaries.", show = verbose_sub)
-            diffs=diffs +compare_dictionaries(dict1[k],dict2[k],prestring,excluded_attrs=excluded_attrs,verbose=verbose)
+            diffs=diffs + compare_dictionaries(dict1[k],dict2[k],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,verbose=verbose)
         elif isinstance(dict1[k],(np.ndarray,list,tuple)) and isinstance(dict2[k],(np.ndarray,list,tuple)):
             print("Keys", prestring, "are lists, numpy arrays, or tuple.", show = verbose_sub)
-            diffs=diffs +compare_lists_arrays_tuple(dict1[k], dict2[k], prestring,excluded_attrs=excluded_attrs,verbose=verbose)
+            list1 = dict1[k]
+            list2 = dict2[k]
+            try:
+                if strong_exclusion:
+                    list1type = []
+                    list2type = []
+                    for i in excluded_attrs:
+                        list1type = [x for x  in list1 if type(x)==type(i)]
+                        list2type = [x for x  in list2 if type(x)==type(i)]
+                    if len([x for x in excluded_attrs if x in list1type]) != 0 or len([x for x in excluded_attrs if x in list2type]) != 0:
+                        print("!!!!!> EXCLUDED: ",prestring,": Values are",list1,"and",list2,".\n", show = verbose)
+                        #print("Entry removed",show=verbose)
+                        list1 = []
+                        list2 = []
+            except:
+                print("Failed on", prestring,":\nvalue1 =",list1,"\nvalue2 = ",list2,".")
+            diffs=diffs +compare_lists_arrays_tuple(list1,list2,prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
         else:
             try:
                 if not dict1[k] == dict2[k]:
-                    print("DIFFERENCE: ",prestring,": Values are",dict1[k],"and",dict2[k],".\n", show = verbose)
+                    print("=====> DIFFERENCE: ",prestring,": Values are",dict1[k],"and",dict2[k],".\n", show = verbose)
                     diffs.append([prestring,dict1[k],dict2[k]])
                 else:
-                    print("OK: ",prestring,": Values are equal.\n", show = verbose_sub)
+                    print("-----> OK: ",prestring,": Values are equal.\n", show = verbose)
             except:
-                print("FAILED: ",prestring,": Values could not be compared. Values are",dict1[k],"and",dict2[k],".\n", show = verbose)
+                print("xxxxx> FAILED: ",prestring,": Values could not be compared. Values are",dict1[k],"and",dict2[k],".\n", show = verbose)
                 diffs.append([prestring+" - FAILED TO COMPARE",dict1[k],dict2[k]])
+    if diffs == []:
+        print("-----> OK: ",string,": Dictionaries are equal.\n", show = verbose)
     return diffs
 
-def compare_lists_arrays_tuple(list1,list2,string="",excluded_attrs=[],verbose=False):
+def compare_lists_arrays_tuple(list1,list2,string="",only_dict=True,excluded_attrs=[],strong_exclusion=True,verbose=False):
     verbose_sub = verbose
     if verbose < 0:
         verbose_sub = 0
     print("Comparing list or arrays", string, ".", show = verbose_sub)
     diffs = []
+    if strong_exclusion:
+        excluded = False
+        new_list1 = []
+        new_list2 = []
+        for e in list1:
+            #print(e)
+            if isinstance(e,(np.ndarray,list,tuple)):
+                list1type = []
+                for i in excluded_attrs:
+                    list1type = [x for x  in e if type(x)==type(i)]
+                if len([x for x in excluded_attrs if x in list1type]) == 0:
+                    new_list1.append(e)
+                else:
+                    new_list1.append([])
+                    print("!!!!!> EXCLUDED: ",string,": Values are",list1,"and",list2,".\n", show = verbose)
+                    excluded = True
+            else:
+                new_list1.append(e)
+        for e in list2:
+            #print(e)
+            if isinstance(e,(np.ndarray,list,tuple)):
+                list2type = []
+                for i in excluded_attrs:
+                    list2type = [x for x  in e if type(x)==type(i)]
+                if len([x for x in excluded_attrs if x in list2type]) == 0:
+                    new_list2.append(e)
+                else:
+                    new_list2.append([])
+                    if not excluded:
+                        print("!!!!!> EXCLUDED: ",string,": Values are",list1,"and",list2,".\n", show = verbose)
+                    excluded = False
+            else:
+                new_list2.append(e)
+        list1 = new_list1
+        list2 = new_list2
     arequal = False
     try:
         arr1 = np.array(list1, dtype=object)
@@ -488,10 +614,10 @@ def compare_lists_arrays_tuple(list1,list2,string="",excluded_attrs=[],verbose=F
     except:
         pass
     if arequal:
-        print("OK: ", string, ": Lists are equal.\n", show = verbose_sub)
+        print("-----> OK: ", string, ": Lists are equal.\n", show = verbose)
     if not arequal:
         if len(list1)!=len(list2):
-            print("DIFFERENCE: ",string,": Lists have different length.\n", show = verbose)
+            print("=====> DIFFERENCE: ",string,": Lists have different length.\n", show = verbose)
             diffs.append([string, list1, list2])
         else:
             for i in range(len(list1)):
@@ -506,23 +632,23 @@ def compare_lists_arrays_tuple(list1,list2,string="",excluded_attrs=[],verbose=F
                     pass
                 if areobjects:
                     print("Items", prestring, "are objects.", show = verbose_sub)
-                    diffs = diffs + compare_objects(list1[i],list2[i],prestring,excluded_attrs=excluded_attrs,verbose=verbose)
+                    diffs = diffs + compare_objects(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
                 elif isinstance(list1[i],dict) and isinstance(list2[i],dict):
                     print("Items", prestring, "are dictionaries.", show = verbose_sub)
-                    diffs = diffs + compare_dictionaries(list1[i],list2[i],prestring,excluded_attrs=excluded_attrs,verbose=verbose)
+                    diffs = diffs + compare_dictionaries(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
                 elif isinstance(list1[i],(np.ndarray,list,tuple)) and isinstance(list2[i],(np.ndarray,list,tuple)):
                     print("Items", prestring,
                           "are lists, numpy arrays, or tuple.", show = verbose_sub)
-                    diffs = diffs + compare_lists_arrays_tuple(list1[i], list2[i], prestring,excluded_attrs=excluded_attrs,verbose=verbose)
+                    diffs = diffs + compare_lists_arrays_tuple(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
                 else:
                     try:
                         if not list1[i] == list2[i]:
-                            print("DIFFERENCE: ",prestring,": Values are",list1[i],"and",list2[i],".\n", show = verbose)
+                            print("=====> DIFFERENCE: ",prestring,": Values are",list1[i],"and",list2[i],".\n", show = verbose)
                             diffs.append([prestring,list1[i],list2[i]])
                         else:
-                            print("OK: ", prestring, " Items are equal.\n", show = verbose_sub)
+                            print("-----> OK: ", prestring, " Items are equal.\n", show = verbose)
                     except:
-                        print("FAILED: ", prestring, ": Values could not be compared. Values are",
+                        print("xxxxx> FAILED: ", prestring, ": Values could not be compared. Values are",
                               list1[i], "and", list2[i], ".\n", show = verbose)
                         diffs.append([prestring,list1[i],list2[i]])
     return diffs

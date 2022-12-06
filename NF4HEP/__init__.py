@@ -10,6 +10,8 @@ from . import base
 #from . import inputs
 from .inputs import data, distributions
 from . import nf
+from .inputs.data import DataMain
+from .nf import NFMain
 
 #from . import base
 #import bijectors

@@ -1,8 +1,8 @@
 # Abstract implementation of RealNVP Flow
 
 __all__ = ['RealNVPNetwork',
-           'RealNVPBijector',
-           'RealNVPFlow']
+           'RealNVPBijector'
+           ]
 
 import numpy as np
 import tensorflow as tf # type: ignore
@@ -19,10 +19,8 @@ from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, 
 from typing_extensions import TypeAlias
 from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
 from NF4HEP.utils.verbosity import print, Verbosity
-from NF4HEP.bijectors.bijectors_base import AbstractNeuralNetwork
-from NF4HEP.bijectors.bijectors_base import AbstractBijector
-from NF4HEP.bijectors.bijectors_base import Flow_base
 from NF4HEP.utils import utils
+from NF4HEP.bijectors.base import BaseNetwork, BaseBijector
 
 header_string_1 = "=============================="
 header_string_2 = "------------------------------"
@@ -30,7 +28,8 @@ header_string_2 = "------------------------------"
 # Singleton object representing "no value", in cases where "None" is meaningful.
 UNSPECIFIED = object()
 
-class RealNVPNetwork(Layer, Verbosity):
+class RealNVPNetwork(BaseNetwork, Verbosity):
+    name: "RealNVPNetwork"
     # """
     # """
     # def define_network(self, verbose = None):
@@ -122,7 +121,7 @@ class RealNVPNetwork(Layer, Verbosity):
                  model_define_inputs: Dict[str, Any],
                  verbose: Optional[IntBool] = None
                 ) -> None:
-        # Attributes type declarations
+        # Attributes type declarations (from parent FileManager class)
         self._batch_norm: StrBool
         self._dropout_rate: Union[np.float_,str]
         self._hidden_layers: List[Any]
@@ -130,51 +129,24 @@ class RealNVPNetwork(Layer, Verbosity):
         self._layers_string: List[str]
         self._model_define_inputs: Dict[str, Any]
         self._ndims: int
-        # Initialise parent Layer and Verbosity classes
-        Layer.__init__(self)
+        # Attributes type declarations
+        #
+        # Initialise parent Verbosity class
         Verbosity.__init__(self, verbose)
         # Set verbosity
         verbose, _ = self.get_verbosity(verbose)
-        # Initialize object
+        # Set inputs and initialise parent BaseNetwork class
         print(header_string_1, "\nInitializing RealNVPNetwork object.\n", show = verbose)
         self.__set_model_define_inputs(model_define_inputs = model_define_inputs, verbose = verbose)
-        self.__set_layers()
         super().__init__()
-
-    @property
-    def batch_norm(self) -> StrBool:
-        return self._batch_norm
-
-    @property
-    def dropout_rate(self) -> Union[np.float_,str]:
-        return self._dropout_rate
-
-    @property
-    def hidden_layers(self) -> List[Any]:
-        return self._hidden_layers
-
-    @property
-    def layers(self) -> List[Any]:
-        return self._layers
-
-    @property
-    def layers_string(self) -> List[str]:
-        return self._layers_string
-
-    @property
-    def model_define_inputs(self) -> Dict[str, Any]:
-        return self._model_define_inputs
-
-    @property
-    def ndims(self) -> int:
-        return self._ndims
+        # Initialize object
+        self.__set_layers()
 
     def __set_model_define_inputs(self,
                                   model_define_inputs: Dict[str, Any],
                                   verbose: Optional[IntBool] = None
                                  ) -> None:
         verbose, verbose_sub = self.get_verbosity(verbose)
-        self._model_define_inputs = model_define_inputs
         try:
             self._ndims = model_define_inputs["ndims"]
         except:
@@ -190,7 +162,7 @@ class RealNVPNetwork(Layer, Verbosity):
         self._dropout_rate = model_define_inputs["dropout_rate"]
         self._batch_norm = model_define_inputs["batch_norm"]
         self._model_define_inputs = model_define_inputs
-                        
+
     def __set_layers(self,
                      verbose: Optional[IntBool] = None
                     ) -> None:
@@ -347,7 +319,8 @@ class RealNVPNetwork(Layer, Verbosity):
         log_s = self._layers[-1](y)
         return t, log_s
 
-class RealNVPBijector(tfb.Bijector, Verbosity): # type: ignore
+class RealNVPBijector(BaseBijector, Verbosity):
+    name = "RealNVPBijector"
     """
     Implementation of a Real-NVP for Denisty Estimation. L. Dinh “Density estimation using Real NVP,” 2016.
     """
@@ -356,30 +329,29 @@ class RealNVPBijector(tfb.Bijector, Verbosity): # type: ignore
                  model_bijector_inputs: Dict[str, Any],
                  verbose: Optional[IntBool] = None
                 ) -> None:
-        # Attributes type declarations
+        # Attributes type declarations (from parent FileManager class)
         self._Model: Model
         self._model_bijector_inputs: Dict[str, Any]
         self._ndims: int
         self._NN: RealNVPNetwork
+        # Attributes type declarations
         self._rem_dims: int
         self._tran_ndims: int
-        # Initialise parent Verbosity classe
+        # Initialise parent Verbosity class
         Verbosity.__init__(self, verbose)
         # Set verbosity
         verbose, _ = self.get_verbosity(verbose)
-        # Initialize object
+        # Set inputs and initialise parent BaseBijector class
         print(header_string_1, "\nInitializing RealNVPBijector object.\n", show = verbose)
         self.__set_model_bijector_inputs(model_bijector_inputs = model_bijector_inputs, verbose = verbose)
-        #self._ndims = self._NN._ndims
-        # Initialize parent Bijector class
-        bij_kargs = utils.dic_minus_keys(self.model_bijector_inputs,["rem_dims"])
-        tfb.Bijector.__init__(self, **bij_kargs)
-        self.NN = RealNVPNetwork(model_define_inputs)
+        nn = RealNVPNetwork(model_define_inputs)
+        super().__init__(nn = nn, model_bijector_inputs = self._bijector_kwargs)
+        # Initialize object
 
     @property
     def NN(self) -> RealNVPNetwork:
         return self._NN
-    
+
     @NN.setter
     def NN(self,
            nn: RealNVPNetwork
@@ -389,18 +361,6 @@ class RealNVPBijector(tfb.Bijector, Verbosity): # type: ignore
         x = Input((self._rem_dims,))
         t, log_s = self._NN(x)
         self._Model = Model(x, [t, log_s])
-
-    @property
-    def Model(self) -> Model:
-        return self._Model
-
-    @property
-    def model_bijector_inputs(self) -> Dict[str, Any]:
-        return self._model_bijector_inputs
-
-    @property
-    def ndims(self) -> int:
-        return self._ndims
 
     @property
     def rem_dims(self) -> int:
@@ -443,6 +403,7 @@ class RealNVPBijector(tfb.Bijector, Verbosity): # type: ignore
         self._tran_ndims = self._ndims-self._rem_dims
         if self._rem_dims < 1 or self._rem_dims > self._ndims - 1:
             raise Exception('ERROR: rem_dims must be 1<rem_dims<ndims-1')
+        self._bijector_kwargs = utils.dic_minus_keys(self.model_bijector_inputs,["rem_dims"])
 
     def _bijector_fn(self, x):
         t, log_s = self._Model(x)
@@ -482,78 +443,3 @@ class RealNVPBijector(tfb.Bijector, Verbosity): # type: ignore
         y_a = y[:, :self._tran_ndims]
         y_b = y[:, self._tran_ndims:]
         return self._bijector_fn(y_b).inverse_log_det_jacobian(y_a, event_ndims=1)
-
-class RealNVPChain(tfb.Chain, Verbosity): # type: ignore
-    name = "RealNVP"
-    """
-    """
-    def __init__(self,
-                 model_define_inputs: Dict[str, Any],
-                 model_bijector_inputs: Dict[str, Any],
-                 model_flow_inputs: Dict[str, Any],
-                 verbose: Optional[IntBool] = None
-                ) -> None:
-        # Attributes type declarations
-        self._batch_normalization: bool
-        self._Bijector: RealNVPBijector
-        self._model_flow_inputs: Dict[str, Any]
-        self._nbijectors: int
-        # Initialise parent Verbosity classe
-        Verbosity.__init__(self, verbose)
-        # Set verbosity
-        verbose, _ = self.get_verbosity(verbose)
-        # Initialize object
-        print(header_string_1, "\nInitializing RealNVPFlow object.\n", show = verbose)
-        self.__set_model_flow_inputs(model_flow_inputs = model_flow_inputs, verbose = verbose)
-        self._bijectors = []
-        self._Bijector = RealNVPBijector(model_define_inputs, model_bijector_inputs)
-        #self._NN = self._bijector._NN
-        ndims = self._bijector._ndims
-        permutation = tf.cast(np.concatenate((np.arange(int(ndims/2), ndims), np.arange(0, int(ndims/2)))), tf.int32)
-        Permute = tfb.Permute(permutation=permutation)
-        print("\n",tfb.BatchNormalization())
-        print("\n",self._bijector)
-        print("\n",Permute)
-        for _ in range(self._num_bijectors):
-            if self._batch_normalization:
-                self._bijectors.append(tfb.BatchNormalization())
-            self._bijectors.append(self._Bijector)
-            self._bijectors.append(Permute)
-        #self._chain = tfb.Chain(bijectors=list(reversed(self._bijectors[:-1])), name='realnvp_chain')
-        tfb.Chain.__init__(self, bijectors=list(reversed(self._bijectors[:-1])), name='realnvp_chain')
-
-    @property
-    def batch_normalization(self) -> bool:
-        return self._batch_normalization
-
-    @property
-    def Bijector(self) -> RealNVPBijector:
-        return self._Bijector
-
-    @property
-    def NN(self) -> RealNVPNetwork:
-        return self._Bijector._NN
-
-    @property
-    def model_flow_inputs(self) -> Dict[str, Any]:
-        return self._model_flow_inputs
-
-    @property
-    def nbijectors(self) -> int:
-        return self._nbijectors
-
-    def __set_model_flow_inputs(self,
-                                model_flow_inputs: Dict[str, Any],
-                                verbose: Optional[IntBool] = None
-                               ) -> None:
-        verbose, verbose_sub = self.get_verbosity(verbose)
-        try:
-            self._num_bijectors = model_flow_inputs["nbijectors"]
-        except:
-            print("The 'model_flow_inputs' argument misses the mandatory 'nbijectors' item. The corresponding attribute will be set to a default of 2.")
-        utils.check_set_dict_keys(dic = model_flow_inputs, 
-                                  keys = ["nbijectors","batch_normalization"],
-                                  vals = [2,False],
-                                  verbose = verbose_sub)
-        self._batch_normalization = model_flow_inputs["batch_normalization"]
-        self._model_flow_inputs = model_flow_inputs

@@ -225,12 +225,12 @@ class RealNVPBijector(tfb.Bijector, Verbosity):
 
     def __init__(self,
                  model_define_inputs,
-                 model_flow_inputs,
+                 model_chain_inputs,
                  verbose=True):
         self.verbose = verbose
         verbose, verbose_sub = self.set_verbosity(verbose)
-        super().__init__(validate_args=model_flow_inputs["validate_args"],
-                         forward_min_event_ndims=model_flow_inputs["forward_min_event_ndims"])
+        super().__init__(validate_args=model_chain_inputs["validate_args"],
+                         forward_min_event_ndims=model_chain_inputs["forward_min_event_ndims"])
         NN = RealNVPNetwork(model_define_inputs)
         self.tran_ndims = NN.tran_ndims
         x = Input((model_define_inputs["rem_dims"],))
@@ -284,18 +284,18 @@ class RealNVPFlow(tfb.Chain, Verbosity):
 
     def __init__(self,
                  model_define_inputs,
-                 model_flow_inputs,
+                 model_chain_inputs,
                  verbose=True):
         self.verbose = verbose
         verbose, verbose_sub = self.set_verbosity(verbose)
         batch_norm = model_define_inputs["batch_norm"]
         ndims = model_define_inputs["ndims"]
-        bijector = RealNVPBijector(model_define_inputs, model_flow_inputs)
+        bijector = RealNVPBijector(model_define_inputs, model_chain_inputs)
         permutation = tf.cast(np.concatenate(
             (np.arange(int(ndims/2), ndims), np.arange(0, int(ndims/2)))), tf.int32)
         Permute = tfb.Permute(permutation=permutation)
         bijectors = []
-        for _ in range(model_flow_inputs["num_bijectors"]):
+        for _ in range(model_chain_inputs["num_bijectors"]):
             if batch_norm:
                 bijectors.append(tfb.BatchNormalization())
             bijectors.append(bijector)

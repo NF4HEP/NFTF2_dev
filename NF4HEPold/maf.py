@@ -452,13 +452,13 @@ class MAFBijector_custom(tfb.Bijector, Verbosity):
 
     def __init__(self,
                  model_define_inputs,
-                 model_flow_inputs,
+                 model_chain_inputs,
                  verbose=True):
         self.verbose = verbose
         verbose, verbose_sub = self.set_verbosity(verbose)
         start = timer()
         self._model_define_inputs = model_define_inputs
-        self._model_flow_inputs = model_flow_inputs
+        self._model_chain_inputs = model_chain_inputs
         self.__set_inputs(verbose=verbose_sub)
         if self.model_define_inputs["default_NN"]:
             NN = MAFNetwork_default(utils.dic_minus_keys(self.model_define_inputs,["default_NN"]))
@@ -513,7 +513,7 @@ class MAFBijector_custom(tfb.Bijector, Verbosity):
         config = super().get_config()
         config.update({
             "model_define_inputs": self._model_define_inputs,
-            "model_flow_inputs": self._model_flow_inputs,
+            "model_chain_inputs": self._model_chain_inputs,
             "verbose": self.verbose,
         })
         return config
@@ -528,7 +528,7 @@ class MAFBijector_custom(tfb.Bijector, Verbosity):
         except:
             raise Exception("model_define_inputs dictionary should contain at least a key 'params'.")
         utils.check_set_dict_keys(self._model_define_inputs, ["default_NN"], [True], verbose=verbose_sub)
-        utils.check_set_dict_keys(self.model_flow_inputs, ["is_constant_jacobian",
+        utils.check_set_dict_keys(self.model_chain_inputs, ["is_constant_jacobian",
                                                            "validate_args",
                                                            "unroll_loop",
                                                            "event_ndims",
@@ -542,13 +542,13 @@ class MAFBijector_custom(tfb.Bijector, Verbosity):
                                                            "custom_maf_bijector",
                                                            2,
                                                            -1])
-        self._is_constant_jacobian = self.model_flow_inputs["is_constant_jacobian"]
-        self._validate_args = self.model_flow_inputs["validate_args"]
-        self._unroll_loop = self.model_flow_inputs["unroll_loop"]
-        self._event_ndims = self.model_flow_inputs["event_ndims"]
-        self._name = self.model_flow_inputs["name"]
-        self._spline_knots = self.model_flow_inputs["spline_knots"]
-        self._range_min = self.model_flow_inputs["range_min"]
+        self._is_constant_jacobian = self.model_chain_inputs["is_constant_jacobian"]
+        self._validate_args = self.model_chain_inputs["validate_args"]
+        self._unroll_loop = self.model_chain_inputs["unroll_loop"]
+        self._event_ndims = self.model_chain_inputs["event_ndims"]
+        self._name = self.model_chain_inputs["name"]
+        self._spline_knots = self.model_chain_inputs["spline_knots"]
+        self._range_min = self.model_chain_inputs["range_min"]
         self._parameters = {'is_constant_jacobian': self._is_constant_jacobian,
                             'validate_args': self._validate_args,
                             'unroll_loop': self._unroll_loop,
@@ -614,8 +614,8 @@ class MAFBijector_custom(tfb.Bijector, Verbosity):
         return self._model_define_inputs
 
     @property
-    def model_flow_inputs(self):
-        return self._model_flow_inputs
+    def model_chain_inputs(self):
+        return self._model_chain_inputs
 
     @property
     def spline_knots(self):
@@ -632,28 +632,28 @@ class MAFFlow(tfb.Chain, Verbosity):
 
     def __init__(self,
                  model_define_inputs,
-                 model_flow_inputs,
+                 model_chain_inputs,
                  verbose=True):
         self.verbose = verbose
         verbose, verbose_sub = self.set_verbosity(verbose)
         start = timer()
         print(header_string, "\nInitializing MAF Flow.\n", show=verbose)
         self._model_define_inputs = model_define_inputs
-        self._model_flow_inputs = model_flow_inputs
+        self._model_chain_inputs = model_chain_inputs
         self.__set_inputs(verbose=verbose_sub)
         default_NN = self.model_define_inputs["default_NN"]
-        default_bijector = self.model_flow_inputs["default_bijector"]
+        default_bijector = self.model_chain_inputs["default_bijector"]
         batch_norm = self.model_define_inputs.pop("batch_norm")
-        ndims = self.model_flow_inputs["ndims"]
+        ndims = self.model_chain_inputs["ndims"]
         if default_bijector:
             bijector = MAFBijector_default(self.model_define_inputs)
         else:
-            self.model_define_inputs["params"] = 3*self.model_flow_inputs["spline_knots"]-1
-            bijector = MAFBijector_custom(self.model_define_inputs, self.model_flow_inputs)
+            self.model_define_inputs["params"] = 3*self.model_chain_inputs["spline_knots"]-1
+            bijector = MAFBijector_custom(self.model_define_inputs, self.model_chain_inputs)
         permutation = tf.cast(np.concatenate((np.arange(int(ndims/2), ndims), np.arange(0, int(ndims/2)))), tf.int32)
         Permute = tfb.Permute(permutation=permutation)
         bijectors = []
-        for _ in range(self.model_flow_inputs["num_bijectors"]):
+        for _ in range(self.model_chain_inputs["num_bijectors"]):
             if batch_norm:
                 bijectors.append(tfb.BatchNormalization())
             bijectors.append(bijector)
@@ -677,13 +677,13 @@ class MAFFlow(tfb.Chain, Verbosity):
         except:
             raise Exception("model_define_inputs dictionary should contain at least a key 'params'.")
         utils.check_set_dict_keys(self._model_define_inputs, ["default_NN"], [True], verbose=verbose_sub)
-        utils.check_set_dict_keys(self._model_flow_inputs, ["default_bijector"], [True], verbose=verbose_sub)
+        utils.check_set_dict_keys(self._model_chain_inputs, ["default_bijector"], [True], verbose=verbose_sub)
 
     def get_config(self):
         config = super().get_config()
         config.update({
             "model_define_inputs": self._model_define_inputs,
-            "model_flow_inputs": self._model_flow_inputs,
+            "model_chain_inputs": self._model_chain_inputs,
             "verbose": self.verbose,
         })
         return config
@@ -693,8 +693,8 @@ class MAFFlow(tfb.Chain, Verbosity):
         return self._model_define_inputs
 
     @property
-    def model_flow_inputs(self):
-        return self._model_flow_inputs
+    def model_chain_inputs(self):
+        return self._model_chain_inputs
 
 
 def _make_dense_autoregressive_masks(

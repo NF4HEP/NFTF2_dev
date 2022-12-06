@@ -83,7 +83,7 @@ class NF(Resources):
                  model_data_inputs=None,
                  model_base_dist_inputs=None,
                  model_define_inputs=None,
-                 model_flow_inputs=None,
+                 model_chain_inputs=None,
                  model_optimizer_inputs=None,
                  model_compile_inputs=None,
                  model_callbacks_inputs=None,
@@ -123,7 +123,7 @@ class NF(Resources):
             self.__model_base_dist_inputs = model_base_dist_inputs
             self.__model_define_inputs = model_define_inputs
             self.__check_define_model_define_inputs()
-            self.__model_flow_inputs = model_flow_inputs
+            self.__model_chain_inputs = model_chain_inputs
             self.__model_optimizer_inputs = model_optimizer_inputs
             self.__model_compile_inputs = model_compile_inputs
             self.__check_define_model_compile_inputs(verbose=verbose_sub)
@@ -164,7 +164,7 @@ class NF(Resources):
         self.__set_seed()
         self.__set_dtype()
         self.__set_data(verbose=verbose_sub)  # also sets self.ndims
-        self.__check_define_model_flow_inputs()  # here because it needs self.ndims
+        self.__check_define_model_chain_inputs()  # here because it needs self.ndims
         self.__check_define_model_base_dist_inputs()  # here because it needs self.ndims
         # sets base distribution (Distribution object)
         self.__set_base_distriburion(verbose=verbose_sub)
@@ -519,10 +519,10 @@ class NF(Resources):
                                                                 False],
                                                                verbose=verbose_sub)
 
-    def __check_define_model_flow_inputs(self, verbose=None):
+    def __check_define_model_chain_inputs(self, verbose=None):
         """
         .. code-block:: python
-            model_flow_inputs = {"num_bijectors": 2, 
+            model_chain_inputs = {"num_bijectors": 2, 
                                  "spline_knots": 8, 
                                  "range_min": -12}
         """
@@ -531,19 +531,19 @@ class NF(Resources):
             pass
         except:
             raise Exception(
-                "model_flow_inputs dictionary should contain at least a key xxxx.")
-        self.__model_flow_inputs["ndims"] = self.ndims
-        utils.check_set_dict_keys(self.__model_flow_inputs, ["num_bijectors"],
+                "model_chain_inputs dictionary should contain at least a key xxxx.")
+        self.__model_chain_inputs["ndims"] = self.ndims
+        utils.check_set_dict_keys(self.__model_chain_inputs, ["num_bijectors"],
                                   [2],
                                   verbose=verbose_sub)
         if self.flow_type == "MAF":
-            utils.check_set_dict_keys(self.__model_flow_inputs, ["default_NN",
+            utils.check_set_dict_keys(self.__model_chain_inputs, ["default_NN",
                                                                  "default_bijector"],
                                       [True,
                                        True],
                                       verbose=verbose_sub)
         elif self.flow_type == "RealNVP":
-            utils.check_set_dict_keys(self.__model_flow_inputs, ["spline_knots",
+            utils.check_set_dict_keys(self.__model_chain_inputs, ["spline_knots",
                                                                  "range_min"],
                                       [8,
                                        -12],
@@ -1813,7 +1813,7 @@ class NF(Resources):
             - :attr:`NF.Flow <NF4HEP.NF.Flow>`
 
         depending on the value of the ``"name"`` item of the 
-        :attr:`NF.__model_flow_inputs <NF4HEP.NF._NF__model_flow_inputs>` dictionary.
+        :attr:`NF.__model_chain_inputs <NF4HEP.NF._NF__model_chain_inputs>` dictionary.
         """
         verbose, verbose_sub = self.set_verbosity(verbose)
         print(header_string, "\nSetting the Normalizing Flow Bijector\n", show=verbose)
@@ -1821,19 +1821,19 @@ class NF(Resources):
         flow_type = self.flow_type
         if flow_type == "MAF":
             self.Flow = MAFFlow(model_define_inputs=self.__model_define_inputs,
-                                model_flow_inputs=self.__model_flow_inputs,
+                                model_chain_inputs=self.__model_chain_inputs,
                                 verbose=verbose_sub)
         elif flow_type == "RealNVP":
             self.Flow = RealNVPFlow(model_define_inputs=self.__model_define_inputs,
-                                    model_flow_inputs=self.__model_flow_inputs,
+                                    model_chain_inputs=self.__model_chain_inputs,
                                     verbose=verbose_sub)
         elif flow_type == "CSpline":
             self.Flow = CSplineFlow(model_define_inputs=self.__model_define_inputs,
-                                    model_flow_inputs=self.__model_flow_inputs,
+                                    model_chain_inputs=self.__model_chain_inputs,
                                     verbose=verbose_sub)
         elif flow_type == "RQSpline":
             self.Flow = RQSplineFlow(model_define_inputs=self.__model_define_inputs,
-                                     model_flow_inputs=self.__model_flow_inputs,
+                                     model_chain_inputs=self.__model_chain_inputs,
                                      verbose=verbose_sub)
         else:
             raise Exception("The algorithm",)

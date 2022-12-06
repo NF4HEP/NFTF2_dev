@@ -1,0 +1,92 @@
+{
+    "datetime_2022_12_06_10_55_19_8087":{
+        "action":"set npoints",
+        "npoints train":[
+            50000
+        ],
+        "npoints val":[
+            50000
+        ],
+        "npoints test":[
+            30000
+        ]
+    },
+    "datetime_2022_12_06_10_55_19_8047":{
+        "action":"object created from input arguments"
+    },
+    "datetime_2022_12_06_10_55_19_8177":{
+        "action":"saved json",
+        "file name":"prova_datamain.json"
+    },
+    "datetime_2022_12_06_10_55_19_8347":{
+        "action":"saved h5",
+        "file name":"prova_datamain.h5"
+    },
+    "datetime_2022_12_06_10_55_19_8377":{
+        "action":"saved json",
+        "file name":"prova_datamain_idx.json"
+    },
+    "datetime_2022_12_06_10_55_19_8447":{
+        "action":"saved h5",
+        "file name":"prova_datamain_idx.h5"
+    },
+    "datetime_2022_12_06_10_55_19_8597":{
+        "action":"saved h5",
+        "file name":"prova_datamain_preprocessing.h5"
+    },
+    "datetime_2022_12_06_10_55_19_8727":{
+        "action":"saved samples h5",
+        "file names":[
+            "prova_datamain_samples.h5"
+        ]
+    },
+    "datetime_2022_12_06_10_55_19_8747":{
+        "action":"saved json",
+        "file name":"prova_datamain_predictions.json"
+    },
+    "datetime_2022_12_06_10_55_19_8797":{
+        "action":"saved h5",
+        "file name":"prova_datamain_predictions.h5"
+    },
+    "datetime_2022_12_06_10_55_22_2761":{
+        "action":"loaded json",
+        "file name":"prova_datamain.log"
+    },
+    "datetime_2022_12_06_10_55_22_2861":{
+        "action":"loaded h5",
+        "file name":"prova_datamain.h5"
+    },
+    "datetime_2022_12_06_10_55_22_2951":{
+        "action":"loaded DataSamples",
+        "files names":[
+            "prova_datamain_samples.h5"
+        ]
+    },
+    "datetime_2022_12_06_10_55_22_2961":{
+        "action":"set npoints",
+        "npoints train":[
+            50000
+        ],
+        "npoints val":[
+            50000
+        ],
+        "npoints test":[
+            30000
+        ]
+    },
+    "datetime_2022_12_06_10_55_22_3083":{
+        "action":"loaded h5",
+        "file name":"prova_datamain_idx.h5"
+    },
+    "datetime_2022_12_06_10_55_22_3203":{
+        "action":"loaded h5",
+        "file name":"prova_datamain_preprocessing.h5"
+    },
+    "datetime_2022_12_06_10_55_22_3283":{
+        "action":"loaded h5",
+        "file name":"prova_datamain_predictions.h5"
+    },
+    "datetime_2022_12_06_10_55_22_3313":{
+        "action":"object reconstructed from loaded files"
+    }
+}

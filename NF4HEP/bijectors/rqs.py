@@ -23,17 +23,17 @@ from __future__ import print_function
 import collections
 import functools
 
-import tensorflow.compat.v2 as tf
+import tensorflow.compat.v2 as tf #type: ignore
 
-from tensorflow_probability.python.bijectors import bijector
-from tensorflow_probability.python.bijectors import softplus as softplus_bijector
-from tensorflow_probability.python.internal import assert_util
-from tensorflow_probability.python.internal import dtype_util
-from tensorflow_probability.python.internal import parameter_properties
-from tensorflow_probability.python.internal import tensor_util
-from tensorflow_probability.python.internal import tensorshape_util
-import tensorflow_probability as tfp
-tfb= tfp.bijectors
+from tensorflow_probability.python.bijectors import bijector #type: ignore
+from tensorflow_probability.python.bijectors import softplus as softplus_bijector #type: ignore
+from tensorflow_probability.python.internal import assert_util #type: ignore
+from tensorflow_probability.python.internal import dtype_util #type: ignore
+from tensorflow_probability.python.internal import parameter_properties #type: ignore
+from tensorflow_probability.python.internal import tensor_util #type: ignore
+from tensorflow_probability.python.internal import tensorshape_util #type: ignore
+import tensorflow_probability as tfp #type: ignore
+tfb = tfp.bijectors
 
 def _ensure_at_least_1d(t):
   t = tf.convert_to_tensor(t)

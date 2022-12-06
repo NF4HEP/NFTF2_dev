@@ -25,6 +25,10 @@ class Verbosity():
     def verbose(self, verbose: Optional[IntBool]) -> None:
         self._verbose, self._verbose_sub = self.get_verbosity(verbose = verbose)
 
+    @property
+    def verbose_sub(self) -> IntBool:
+        return self._verbose_sub
+
     def get_verbosity(self, verbose: Optional[IntBool]) -> list[IntBool]:
         """
         Method inherited by all classes (from the :class:`Verbosity <DNNLikelihood.Verbosity>` class)

@@ -52,12 +52,13 @@ header_string_2 = "------------------------------"
 class DataFileManager(FileManager):
     """
     """
-    managed_object: str = "Data"
+    managed_object_name: str = "DataMain"
+    #managed_object_type: TypeAlias = Union["DataMain","DataMain"]
     def __init__(self,
                  name: Optional[str] = None,
                  input_file: Optional[StrPath] = None, 
                  output_folder: Optional[StrPath] = None,
-                 load_on_RAM: bool = False,
+                 load_on_RAM: Optional[bool] = None,
                  verbose: Optional[IntBool] = None
                 ) -> None:
         # Attributes type declarations (from parent FileManager class)
@@ -67,7 +68,7 @@ class DataFileManager(FileManager):
         self._ManagedObject: "DataMain"
         # Attributes type declarations
         self._load_on_RAM: bool
-        self._opened_dataset: h5py.File
+        self._opened_dataset: Optional[h5py.File]
         # Initialize parent FileManager class
         super().__init__(name=name,
                          input_file=input_file,
@@ -76,21 +77,22 @@ class DataFileManager(FileManager):
         # Set verbosity
         verbose, verbose_sub = self.get_verbosity(verbose)
         # Initialize object
-        self.load_on_RAM = load_on_RAM
+        self.load_on_RAM = load_on_RAM if load_on_RAM is not None else False
+        self.opened_dataset = None
 
-    @property
-    def ManagedObject(self) -> "DataMain":
-        return self._ManagedObject
-
-    @ManagedObject.setter
-    def ManagedObject(self,
-                      managed_object: "DataMain"
-                     ) -> None:
-        try:
-            self._ManagedObject
-            raise Exception("The 'ManagedObject' attribute is automatically set when initialising the DataMain object and cannot be replaced.")
-        except:
-            self._ManagedObject = managed_object
+    #@property
+    #def ManagedObject(self) -> "DataMain":
+    #    return self._ManagedObject
+#
+    #@ManagedObject.setter
+    #def ManagedObject(self,
+    #                  managed_object: "DataMain"
+    #                 ) -> None:
+    #    try:
+    #        self._ManagedObject
+    #        raise Exception("The 'ManagedObject' attribute is automatically set when initialising the DataMain object and cannot be replaced.")
+    #    except:
+    #        self._ManagedObject = managed_object
 
     @property
     def input_idx_h5_file(self) -> Optional[Path]:
@@ -123,8 +125,17 @@ class DataFileManager(FileManager):
         self._load_on_RAM = load_on_RAM
 
     @property
-    def opened_dataset(self) -> h5py.File:
+    def opened_dataset(self) -> Optional[h5py.File]:
         return self._opened_dataset
+
+    @opened_dataset.setter
+    def opened_dataset(self,
+                       input_file: Optional[Path]
+                       ) -> None:
+        if input_file is not None:
+            self._opened_dataset = h5py.File(input_file, "r")
+        else:
+            self._opened_dataset = None
 
     @property
     def output_idx_h5_file(self) -> Path:
@@ -148,12 +159,13 @@ class DataFileManager(FileManager):
         """ 
         """
         verbose, _ = self.get_verbosity(verbose)
-        try:
-            self._opened_dataset.close()
-            del(self._opened_dataset)
-            print(header_string_2,"\nClosed", self.input_samples_h5_file,".\n", show = verbose)
-        except:
-            print(header_string_2,"\nNo dataset to close.\n", show = verbose)
+        if self._opened_dataset is not None:
+            try:
+                self._opened_dataset.close()
+                del(self._opened_dataset)
+                print(header_string_2,"\nClosed", self.input_samples_h5_file,".\n", show = verbose)
+            except:
+                print(header_string_2,"\nNo dataset to close.\n", show = verbose)
 
     def load(self, verbose: Optional[IntBool] = None) -> None:
         """
@@ -179,13 +191,9 @@ class DataFileManager(FileManager):
             dict_to_load_main = dictionary["Main"]
             self.ManagedObject.__dict__.update(dict_to_load_main)
             utils.reset_random_seeds(self.ManagedObject.seed)
-            self._name._Name__check_define_name(name = self.ManagedObject._name) # type: ignore
-            if self.load_on_RAM != self.ManagedObject.load_on_RAM:
-                self.load_on_RAM = self.ManagedObject._load_on_RAM
-                print(header_string_2,"\nWARNING: The 'load_on_RAM' attribute from saved object differs from the one specified in the FileManager. Using the loaded one (",str(self.load_on_RAM),").\n", show = True)
             # Load arguments and re-build ParsManager object
             dict_to_load_pars_manager = dictionary["ParsManager"]
-            self.ManagedObject.ParsManager = DataParsManager(ndims = dict_to_load_pars_manager["_ndims"],
+            self.ManagedObject.ParsManager = DataParsManager(ndims = int(dict_to_load_pars_manager["_ndims"]),
                                                              pars_central = dict_to_load_pars_manager["_pars_central"],
                                                              pars_bounds = dict_to_load_pars_manager["_pars_bounds"],
                                                              pars_labels = dict_to_load_pars_manager["_pars_labels"],
@@ -241,23 +249,24 @@ class DataFileManager(FileManager):
             input_file = self.input_samples_h5_file
         else:
             raise Exception("Input file not defined.")
-        self._opened_dataset = h5py.File(input_file, "r")
-        data = h5py.Group(self._opened_dataset["input_data"].id)
-        data_X = h5py.Dataset(data["X"].id)
-        data_Y = h5py.Dataset(data["Y"].id)
-        if dtype_required is None:
-            dtype_required = np.dtype(h5py.Datatype(data["dtype_required"].id)).type
-        else:
-            dtype_required = np.dtype(dtype_required).type
-        dtype_stored = np.dtype(h5py.Datatype(data["dtype_stored"].id)).type
-        if self._load_on_RAM:
-            data_X = np.array(data_X[:]).astype(dtype_stored)
-            data_Y = np.array(data_Y[:]).astype(dtype_stored)
-            self._opened_dataset.close()
-        self.ManagedObject.InputData = DataSamples(data_X = data_X,
-                                                   data_Y = data_Y,
-                                                   dtype = [dtype_stored,dtype_required],
-                                                   verbose = verbose_sub)
+        self.opened_dataset = input_file
+        if self._opened_dataset is not None:
+            data = h5py.Group(self._opened_dataset["input_data"].id)
+            data_X = h5py.Dataset(data["X"].id)
+            data_Y = h5py.Dataset(data["Y"].id)
+            if dtype_required is None:
+                dtype_required = np.dtype(h5py.Datatype(data["dtype_required"].id)).type
+            else:
+                dtype_required = np.dtype(dtype_required).type
+            dtype_stored = np.dtype(h5py.Datatype(data["dtype_stored"].id)).type
+            if self._load_on_RAM:
+                data_X = np.array(data_X[:]).astype(dtype_stored)
+                data_Y = np.array(data_Y[:]).astype(dtype_stored)
+                self._opened_dataset.close()
+            self.ManagedObject.InputData = DataSamples(data_X = data_X,
+                                                       data_Y = data_Y,
+                                                       dtype = [dtype_stored,dtype_required],
+                                                       verbose = verbose_sub)
         end = timer()
         self.ManagedObject._log[utils.generate_timestamp()] = {"action": "loaded DataSamples",
                                                                "files names": [input_file.name]}
@@ -332,7 +341,7 @@ class DataFileManager(FileManager):
                                                          self.ManagedObject.DataManager._train_val_range[-1]+1]
         dict_to_save_data_manager["_test_range"] = [self.ManagedObject.DataManager._test_range[0],
                                                     self.ManagedObject.DataManager._test_range[-1]+1]
-        dict_to_save = {"Main": dict_to_save_main, "ParsManager": dict_to_save_pars_manager, "DataManager":  dict_to_save_data_manager}
+        dict_to_save = {"_name": self.name, "Main": dict_to_save_main, "ParsManager": dict_to_save_pars_manager, "DataManager":  dict_to_save_data_manager}
         log = self._FileManager__save_dict_h5_json(dict_to_save = dict_to_save, # type: ignore
                                                    output_file = self.output_object_h5_file,
                                                    overwrite = overwrite,
@@ -575,6 +584,43 @@ class DataSamples(Verbosity):
         self.__check_data()
         self.set_dtype(dtype = dtype, verbose = verbose_sub)
 
+    #@property
+    #def dtype(self) -> Dict[str,Any]:
+    #    return {"dtype_stored":  self._dtype_stored, "dtype_required": self._dtype_required}
+    #
+    #@dtype.setter
+    #def dtype(self,
+    #          dtype: Optional[DTypeStrList] = None
+    #         ) -> None:
+    #    """ 
+    #    """
+    #    if dtype is None:
+    #        self._dtype_stored = np.dtype("float32").type
+    #        self._dtype_required = np.dtype("float32").type
+    #    elif type(dtype) == str:
+    #        try:
+    #            self._dtype_stored = np.dtype(dtype).type
+    #            self._dtype_required = np.dtype(dtype).type
+    #        except:
+    #            self._dtype_stored = np.dtype("float32").type
+    #            self._dtype_required = np.dtype("float32").type
+    #            print(header_string_2,"\nWARNING: invalid data type",dtype,". Data types set to 'float32'.\n", show = True)
+    #    elif type(dtype) == list:
+    #        dtype_list = list(dtype) # type: ignore
+    #        if len(dtype_list) == 2: 
+    #            try:
+    #                self._dtype_stored = np.dtype(dtype_list[0]).type
+    #                self._dtype_required = np.dtype(dtype_list[1]).type
+    #            except:
+    #                self._dtype_stored = np.dtype("float32").type
+    #                self._dtype_required = np.dtype("float32").type
+    #                print(header_string_2,"\nWARNING: invalid data type list",dtype,". Data types set to 'float32'.\n", show = True)
+    #        else:
+    #            self._dtype_stored = np.dtype("float32").type
+    #            self._dtype_required = np.dtype("float32").type
+    #            print(header_string_2,"\nWARNING: invalid data type list",dtype,". Data types set to 'float32'.\n", show = True)
+        
+
     def set_dtype(self,
                   dtype: Optional[DTypeStrList] = None,
                   verbose: Optional[IntBool] = None
@@ -648,7 +694,7 @@ class DataMain(Verbosity):
     This class contains the ``Data`` object representing the dataset used for training, validating and testing
     the DNNLikelihood. It can be creaded both feeding X and Y data or by loading an existing ``Data`` object.
     """
-    managed_object: str = "DataMain"
+    object_name = "DataMain"
     def __init__(self,
                  file_manager: DataFileManager,
                  pars_manager: Optional[DataParsManager] = None,
@@ -661,7 +707,6 @@ class DataMain(Verbosity):
         """
         """
         # Attributes type declatation
-        self._load_on_RAM: bool
         self._log: LogPredDict
         self._seed: int
         self._DataManager: DataManager
@@ -682,10 +727,10 @@ class DataMain(Verbosity):
         self._log = {}
         print(header_string_2,"\nSetting FileManager.\n", show = verbose)
         self.FileManager = file_manager # also sets the DataMain managed object FileManager attribute and load_on_RAM DataMain attribute
-        self.Predictions = DataPredictionsManager(data_main = self)
         print(header_string_2,"\nSetting Predictions.\n", show = self.verbose)
-        self.Figures = DataFiguresManager(data_main = self)
+        self.Predictions = DataPredictionsManager(data_main = self)
         print(header_string_2,"\nSetting Figures.\n", show = verbose)
+        self.Figures = DataFiguresManager(data_main = self)
         if self.FileManager.input_file is None:
             self.seed = seed if seed is not None else 0
             print(header_string_2,"\nInitializing new DataMain object.\n", show = verbose)
@@ -704,9 +749,12 @@ class DataMain(Verbosity):
                                            verbose = verbose)
         else:
             print(header_string_2,"\nLoading existing DataMain object.\n", show = verbose)
-            for attr in [pars_manager,input_data,npoints,seed]:
-                if attr is not None:
-                    print(header_string_2,"\nWarning: an input file was specified and the argument '",attr,"' will be ignored. The related attribute will be set from the input file.\n", show = True)
+            for k,v in {"pars_manager": pars_manager, 
+                        "input_data": input_data,
+                        "npoints": npoints,
+                        "seed": seed}.items():
+                if v is not None:
+                    print(header_string_2,"\nWARNING: an input file was specified and the argument '",k,"' will be ignored. The related attribute will be set from the input file.\n", show = True)
             self.FileManager.load(verbose = verbose)
         self.Inference = DataInference(data_main = self)
         print(header_string_2,"\nSetting Inference.\n", show = verbose)
@@ -714,21 +762,21 @@ class DataMain(Verbosity):
         print(header_string_2,"\nSetting Plotter.\n", show = verbose)
         if self.FileManager.input_file is None:
             self._log[timestamp] = {"action": "object created from input arguments"}
-            #self.FileManager.save(timestamp = timestamp, overwrite = False, verbose = verbose_sub)
+            self.FileManager.save(timestamp = timestamp, overwrite = False, verbose = verbose_sub)
         else:
             self._log[utils.generate_timestamp()] = {"action": "object reconstructed from loaded files"}
-            #self.FileManager.save_log(timestamp = timestamp, overwrite = True, verbose = verbose_sub)
-        self.FileManager.save_log(timestamp = timestamp, overwrite = bool(self.FileManager.input_file), verbose = verbose_sub)
+            self.FileManager.save_log(timestamp = timestamp, overwrite = True, verbose = verbose_sub)
 
     @property
     def excluded_attributes(self) -> list:
         tmp = ["_log",
                "_verbose",
+               "_verbose_sub",
                "_DataManager",
-               "_DataSamples",
                "_Figures",
                "_FileManager",
                "_Inference",
+               "_InputData",
                "_ParsManager",
                "_Plotter",
                "_Predictions"
@@ -749,11 +797,16 @@ class DataMain(Verbosity):
         except:
             self._FileManager = file_manager
             self._FileManager.ManagedObject = self
-            self._load_on_RAM = self._FileManager.load_on_RAM
 
     @property
     def load_on_RAM(self) -> bool:
-        return self._load_on_RAM
+        return self._FileManager.load_on_RAM
+
+    @load_on_RAM.setter
+    def load_on_RAM(self,
+                    load_on_RAM: bool) -> None:
+        self._FileManager.load_on_RAM = load_on_RAM
+        self._FileManager.load_input_data(dtype_required = None, verbose = self._verbose)
 
     @property
     def name(self) -> str:
@@ -2419,10 +2472,11 @@ class DataManager(Verbosity):
 class DataPredictionsManager(PredictionsManager):
     """
     """
+    managed_object_name: str = "DataMain"
     def __init__(self,
                  data_main: DataMain
                 ) -> None:
-        super().__init__(obj = data_main)
+        super().__init__(managed_object = data_main)
 
     def init_predictions(self):
         pass
@@ -2437,25 +2491,27 @@ class DataPredictionsManager(PredictionsManager):
 class DataFiguresManager(FiguresManager):
     """
     """
+    managed_object_name: str = "DataMain"
     def __init__(self,
                  data_main: DataMain
                 ) -> None:
-        super().__init__(obj = data_main)
-
+        super().__init__(managed_object = data_main)
 
 class DataInference(Inference):
     """
     """
+    managed_object_name: str = "DataMain"
     def __init__(self,
                  data_main: DataMain,
                 ) -> None:
-        super().__init__(obj = data_main)
+        super().__init__(managed_object = data_main)
 
 
 class DataPlotter(Plotter):
     """
     """
+    managed_object_name: str = "DataMain"
     def __init__(self,
                  data_main: DataMain
                 ) -> None:
-        super().__init__(obj = data_main)
+        super().__init__(managed_object = data_main)

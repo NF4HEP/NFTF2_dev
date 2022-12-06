@@ -47,7 +47,7 @@
         "validate_args":false,
         "batch_norm":false
     },
-    "_NF__model_flow_inputs":{
+    "_NF__model_chain_inputs":{
         "num_bijectors":2,
         "spline_knots":8,
         "range_min":-12,

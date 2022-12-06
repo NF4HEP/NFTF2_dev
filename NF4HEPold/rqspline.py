@@ -45,12 +45,12 @@ class RQSpline(RQSplineFlow):
     """
     def __init__(self,
                  model_define_inputs = None,
-                 model_flow_inputs = None,
+                 model_chain_inputs = None,
                  verbose = True):
         self.verbose = verbose
         verbose, verbose_sub = self.set_verbosity(verbose)
         self.__model_define_inputs = model_define_inputs
-        self.__model_flow_inputs = model_flow_inputs
+        self.__model_chain_inputs = model_chain_inputs
         # setting inputs
         self.__set_inputs(verbose = verbose_sub)
         # define network through the __define_network method of MAFNetwork
@@ -63,5 +63,5 @@ class RQSpline(RQSplineFlow):
     def __set_inputs(self, verbose=None):
         self.model_define_inputs = utils.dic_minus_keys(self.__model_define_inputs, ["batch_norm"])
         self.batch_norm = self.__model_define_inputs["batch_norm"]
-        self.ndims = self.__model_flow_inputs["ndims"]
-        self.num_bijectors = self.__model_flow_inputs["num_bijectors"]
+        self.ndims = self.__model_chain_inputs["ndims"]
+        self.num_bijectors = self.__model_chain_inputs["num_bijectors"]

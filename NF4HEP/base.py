@@ -46,11 +46,49 @@ header_string_2 = "------------------------------"
 class InputFileNotFoundError(FileNotFoundError):
     pass
 
+
 class InvalidInput(Exception):
     pass
 
 class InvalidPredictions(Exception):
     pass
+
+
+class ObjectManager():
+    """
+    Managed objects need to be imported in the package __init__.py
+    Current managed objects are DataMain and NFMain
+    """
+    managed_object_name: str
+    #allowed_managed_objects: List[str] = ["DataMain", "NFMain"]
+    #allowed_managed_object_types: TypeAlias = Union["DataMain", "NFMain"] # type: ignore
+    def __init__(self,
+                 managed_object: Any
+                ) -> None:
+        """
+        """
+        # Import managed objects modules
+        #from NF4HEP import DataMain, NFMain
+        # Attributes type declatation
+        self._ManagedObject: Any
+        # Initialize object
+        self.ManagedObject = managed_object
+    
+    @property
+    def ManagedObject(self) -> Any:
+        return self._ManagedObject
+
+    @ManagedObject.setter
+    def ManagedObject(self,
+                      managed_object: Any,
+                     ) -> None:
+        object_name = self.__class__.__name__
+        exec("from NF4HEP import " + self.managed_object_name)
+        if isinstance(managed_object,eval(self.managed_object_name)):
+            self._ManagedObject = managed_object
+        else:
+            raise TypeError(object_name+" object does not support object of type "+str(type(managed_object))+" as managed object.")
+
 
 class Name:
     """
@@ -58,14 +96,14 @@ class Name:
     to store the object name.
     """
     def __init__(self,
-                 managed_object: str,
+                 managed_object_name: str,
                  name: str = ""
                 ) -> None:
         # Attributes type declarations
         self._name_str: str
-        self._managed_object: str
+        self._managed_object_name: str
         # Initialize object
-        self._managed_object = managed_object
+        self._managed_object_name = managed_object_name
         self.__check_define_name(name = name)
 
     @property
@@ -73,8 +111,8 @@ class Name:
         return self._name_str
 
     @property
-    def managed_object(self) -> str:
-        return self._managed_object
+    def managed_object_name(self) -> str:
+        return self._managed_object_name
 
     def __check_define_name(self,
                             name: str
@@ -83,22 +121,22 @@ class Name:
         """
         if name == "":
             timestamp = utils.generate_timestamp()
-            self._name_str = self._managed_object.lower()+"_"+timestamp
+            self._name_str = self._managed_object_name.lower()+"_"+timestamp
         else:
-            self._name_str = utils.check_add_suffix(name, "_"+self._managed_object.lower())  
+            self._name_str = utils.check_add_suffix(name, "_"+self._managed_object_name.lower())  
 
     def __call__(self) -> str:
         """
         """
         return self._name_str
 
-class FileManager(ABC,Verbosity):
+
+class FileManager(ABC,ObjectManager,Verbosity):
     """
     Abstract class to define I/O files and save/load objects :obj:`DataMain <NF4HEP.DataMain>` and :obj:`NF <NF4HEP.NF>`.
     """
-    managed_object: str
-    allowed_objects: List[str] = ["DataMain", "NFMain"]
-    allowed_types: TypeAlias = Union["DataMain", "NFMain"] # type: ignore
+    managed_object_name: str
+    #managed_object_type: TypeAlias
     def __init__(self,
                  name: Optional[str] = None,
                  input_file: Optional[StrPath] = None,
@@ -109,7 +147,7 @@ class FileManager(ABC,Verbosity):
         self._input_file: Optional[Path]
         self._name: Name
         self._output_folder: Path
-        self._ManagedObject: FileManager.allowed_types
+        self._ManagedObject: Any
         # Initialise parent ABC and Verbosity classes
         ABC.__init__(self)
         Verbosity.__init__(self, verbose)
@@ -119,22 +157,8 @@ class FileManager(ABC,Verbosity):
         # Define self._input_file, self._input_folder, self._input_object_h5_file, self._input_log_file
         input_file = input_file if input_file is None else Path(input_file)
         self.input_file = input_file
-        self.name = name if name is not None else "" 
+        self.name = name if name is not None else ""
         self.output_folder = output_folder # type: ignore
-
-    @property
-    def ManagedObject(self) -> allowed_types:
-        return self._ManagedObject
-
-    #@ManagedObject.setter
-    #def ManagedObject(self,
-    #                  managed_object: allowed_types
-    #                 ) -> None:
-    #    try:
-    #        self._ManagedObject
-    #        raise Exception("The 'ManagedObject' attribute is automatically set when initialising the managed object and cannot be replaced.")
-    #    except:
-    #        self._ManagedObject = managed_object
 
     @property
     def name(self) -> str:
@@ -149,7 +173,7 @@ class FileManager(ABC,Verbosity):
             ) -> None:
         if self.input_object_h5_file is not None:
             name = self.__read_name_from_input_file()
-        self._name = Name(managed_object = self.managed_object,
+        self._name = Name(managed_object_name = self.managed_object_name,
                           name = name)
 
     @property
@@ -221,6 +245,7 @@ class FileManager(ABC,Verbosity):
                 self._output_folder = Path(self.input_folder)
             else:
                 self._output_folder = Path("").absolute()
+        self.check_create_folder(self._output_folder)
         print(header_string_2,"\nOutput folder set to\n\t", self._output_folder,".\n", show = self._verbose)
 
     @property
@@ -296,11 +321,10 @@ class FileManager(ABC,Verbosity):
 
     def __read_name_from_input_file(self) -> str:
         if self.input_object_h5_file is not None:
-            [_, dictionary] = self.__load_h5(input_h5_file = self.input_object_h5_file,
-                                             verbose = False
-                                            )
-            # Load DataMain main object attributes
-            name_str: str = dictionary["Main"]["_name"]
+            input_h5_file = Path(self.input_object_h5_file)
+            name_str: str = str(dd.io.load(input_h5_file,"/_name"))
+            #dictionary = dd.io.load(input_h5_file,"/_name")
+            #name_str: str = dictionary["_name"]
             return name_str
         else:
             raise Exception("Could not determine object name from 'input_file'")
@@ -658,11 +682,11 @@ class FileManager(ABC,Verbosity):
             extension = extension_string
         if type(overwrite) == bool:
             if overwrite:
-                print(header_string_2, "\n",self.managed_object,extension,"file\n\t", str(filename),"\nupdated (or saved if it did not exist) in", time, "s.\n", show = verbose)
+                print(header_string_2, "\n",self.ManagedObject.__class__.__name__,extension,"output file\n\t", str(filename),"\nupdated (or saved if it did not exist) in", time, "s.\n", show = verbose)
             else:
-                print(header_string_2, "\n",self.managed_object,extension,"file\n\t", str(filename),"\nsaved in", time, "s.\n", show = verbose)
+                print(header_string_2, "\n",self.ManagedObject.__class__.__name__,extension,"output file\n\t", str(filename),"\nsaved in", time, "s.\n", show = verbose)
         elif overwrite == "dump":
-            print(header_string_2, "\n",self.managed_object,extension,"file dump\n\t",str(filename), "\nsaved in", time, "s.\n", show = verbose)
+            print(header_string_2, "\n",self.ManagedObject.__class__.__name__,extension,"output file dump\n\t",str(filename), "\nsaved in", time, "s.\n", show = verbose)
 
     def print_load_info(self,
                         filename: StrPath,
@@ -678,7 +702,7 @@ class FileManager(ABC,Verbosity):
             extension = filename.suffix.replace(".","")
         else:
             extension = extension_string
-        print(header_string_2, "\n",self.managed_object,extension,"file\n\t", str(filename),"\nloaded in", time, "s.\n", show = verbose)
+        print(header_string_2, "\n",self.ManagedObject,extension,"file\n\t", str(filename),"\nloaded in", time, "s.\n", show = verbose)
 
     def replace_strings_in_file(self, 
                                 filename: StrPath, 
@@ -758,33 +782,28 @@ class FileManager(ABC,Verbosity):
         self.ManagedObject._log = {**self.ManagedObject._log, **log}
 
 
-class PredictionsManager(ABC):
+class PredictionsManager(ABC,ObjectManager):
     """
     Abstract class to define make and store predictions of objects :obj:`DataMain <NF4HEP.DataMain>` and :obj:`NF <NF4HEP.NF>`.
     """
-    allowed_objects: List[str] = ["DataMain", "NFMain"]
-    allowed_types: TypeAlias = Union["DataMain", "NFMain"] # type: ignore
+    managed_object_name: str
     def __init__(self,
-                 obj: allowed_types
+                 managed_object: Any
                 ) -> None:
         """
         """
         # Attributes type declatation
-        self._obj: allowed_types # type: ignore
-        self._managed_object: str
+        self._ManagedObject: Any
+        self._managed_object_name: str
         self._predictions_dict: LogPredDict
-        # Initialise parent ABC classes
+        # Initialize parent ABC and ManagedObject class (sets self._ManagedObject)
         ABC.__init__(self)
+        ObjectManager.__init__(self, managed_object = managed_object)
         # Set verbosity
-        verbose, _ = obj.get_verbosity(obj._verbose)
+        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Predictions.\n", show = verbose)
-        self.__check_set_object(obj = obj)
         self._predictions_dict = {}
-
-    @property
-    def managed_object(self) -> str:
-        return self._managed_object
 
     @property
     def predictions_dict(self) -> LogPredDict:
@@ -802,51 +821,30 @@ class PredictionsManager(ABC):
     def validate_predictions(self):
         pass
 
-    def __check_set_object(self,
-                           obj: allowed_types
-                          ) -> None:
-        self._obj = obj
-        self._managed_object = obj.managed_object
-        if self._managed_object not in self.allowed_objects:
-            raise InvalidInput("Predictions are not supported for the object"+self._managed_object+str("."))
 
-
-class FiguresManager():
+class FiguresManager(ObjectManager):
     """
     """
-    allowed_objects: List[str] = ["DataMain", "NFMain"]
-    allowed_types: TypeAlias = Union["DataMain", "NFMain"] # type: ignore
+    managed_object_name: str
     def __init__(self,
-                 obj: allowed_types
-                 ) -> None:
+                 managed_object: Any
+                ) -> None:
         """
         """
         # Attributes type declatation
-        self._obj: allowed_types # type: ignore
-        self._managed_object: str
+        self._ManagedObject: Any
         self._figures_dict: FigDict
+        # Initialize parent ManagedObject class (sets self._ManagedObject)
+        super().__init__(managed_object = managed_object)
         # Set verbosity
-        verbose, _ = obj.get_verbosity(obj._verbose)
+        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Figures.\n", show = verbose)
-        self.__check_set_object(obj = obj)
         self._figures_dict = {}
 
     @property
     def figures_dict(self) -> FigDict:
         return self._figures_dict
-
-    @property
-    def managed_object(self) -> str:
-        return self._managed_object
-
-    def __check_set_object(self,
-                           obj: allowed_types
-                          ) -> None:
-        self._obj = obj
-        self._managed_object = obj.managed_object
-        if self._managed_object not in self.allowed_objects:
-            raise InvalidInput("Predictions are not supported for the object"+self._managed_object+str("."))
 
     def check_delete_figures(self, 
                              delete_figures: bool = False, 
@@ -854,19 +852,19 @@ class FiguresManager():
                             ) -> None:
         """
         """
-        verbose, _ = self._obj.get_verbosity(verbose)
+        verbose, _ = self._ManagedObject.get_verbosity(verbose)
         print(header_string_2,"\nResetting predictions.\n", show = verbose)
         try:
-            self._obj.FileManager.output_figures_folder
+            self._ManagedObject.FileManager.output_figures_folder
         except:
             print(header_string_2,"\nThe object does not have an associated figures folder.\n")
             return
         if delete_figures:
-            self._obj.FileManager.check_delete_all_files_in_path(self._obj.FileManager.output_figures_folder)
+            self._ManagedObject.FileManager.check_delete_all_files_in_path(self._ManagedObject.FileManager.output_figures_folder)
             self._figures_dict = {}
             print(header_string_2,"\nAll predictions and figures have been deleted and the 'predictions' attribute has been initialized.\n", show = verbose)
         else:
-            self._figures_dict = self.check_figures_dic(output_figures_folder=self._obj.FileManager._output_figures_folder)
+            self._figures_dict = self.check_figures_dic(output_figures_folder=self._ManagedObject.FileManager.output_figures_folder)
             print(header_string_2,"\nAll predictions have been deleted and the 'predictions' attribute has been initialized. No figure file has been deleted.\n", show = verbose)
 
     def check_figures_dic(self,
@@ -904,14 +902,14 @@ class FiguresManager():
                      ) -> None:
         """
         """
-        verbose, verbose_sub = self._obj.get_verbosity(verbose)
+        verbose, verbose_sub = self._ManagedObject.get_verbosity(verbose)
         print(header_string_2,"\nResetting figures.\n", show = verbose)
         start = timer()
         timestamp = utils.generate_timestamp()
         self.check_delete_figures(delete_figures = delete_figures, 
                                   verbose = verbose_sub)
         end = timer()
-        self._obj._log[utils.generate_timestamp()] = {"action": "reset predictions"}
+        self._ManagedObject._log[utils.generate_timestamp()] = {"action": "reset predictions"}
         print(header_string_2,"\nFigures reset in", end-start, "s.\n", show = verbose)
 
     def show_figures(self,
@@ -935,7 +933,7 @@ class FiguresManager():
                        ) -> Path:
         """
         """
-        verbose, verbose_sub = self._obj.get_verbosity(verbose)
+        verbose, verbose_sub = self._ManagedObject.get_verbosity(verbose)
         print(header_string_2,"\nChecking and updating figures dictionary,\n", show = verbose)
         figure_file = Path(figure_file).absolute()
         new_figure_file = figure_file
@@ -946,16 +944,16 @@ class FiguresManager():
                 for k, v in self.figures_dict.items():
                     if figure_file in v:
                         timestamp = k
-                    old_figure_file = self._obj.FileManager.check_rename_path(from_path = self._obj.FileManager.output_figures_folder.joinpath(figure_file),
+                    old_figure_file = self._ManagedObject.FileManager.check_rename_path(from_path = self._ManagedObject.FileManager.output_figures_folder.joinpath(figure_file),
                                                                          timestamp = timestamp,
                                                                          verbose = verbose_sub)
                     if timestamp is not None:
                         self.figures_dict[timestamp] = [Path(str(f).replace(str(figure_file),str(old_figure_file))) for f in v]
         elif overwrite == "dump":
-            new_figure_file = self._obj.FileManager.generate_dump_file_name(figure_file, timestamp=timestamp)
+            new_figure_file = self._ManagedObject.FileManager.generate_dump_file_name(figure_file, timestamp=timestamp)
         if timestamp is None:
             timestamp = utils.generate_timestamp()
-        self._obj._log[utils.generate_timestamp()] = {"action": "checked/updated figures dictionary",
+        self._ManagedObject._log[utils.generate_timestamp()] = {"action": "checked/updated figures dictionary",
                                                       "figure_file": figure_file,
                                                       "new_figure_file": new_figure_file}
         #self.save_log(overwrite=True, verbose=verbose_sub)
@@ -965,36 +963,23 @@ class FiguresManager():
         pass
 
 
-class Inference():
+class Inference(ObjectManager):
     """
     """
-    allowed_objects: List[str] = ["DataMain", "NFMain"]
-    allowed_types = Union["DataMain", "NFMain"] # type: ignore
+    managed_object_name: str
     def __init__(self,
-                 obj: allowed_types
-                 ) -> None:
+                 managed_object: Any
+                ) -> None:
         """
         """
         # Attributes type declatation
-        self._obj: allowed_types # type: ignore
-        self._managed_object: str
+        self._ManagedObject: Any
+        # Initialize parent ManagedObject class (sets self._ManagedObject)
+        super().__init__(managed_object = managed_object)
         # Set verbosity
-        verbose, _ = obj.get_verbosity(obj._verbose)
+        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Inference.\n", show = verbose)
-        self.__check_set_object(obj = obj)
-
-    @property
-    def managed_object(self) -> str:
-        return self._managed_object
-
-    def __check_set_object(self,
-                           obj: allowed_types
-                          ) -> None:
-        self._obj = obj
-        self._managed_object = obj.managed_object
-        if self._managed_object not in self.allowed_objects:
-            raise InvalidInput("Predictions are not supported for the object"+self._managed_object+str("."))
 
     def CI_from_sigma(self, 
                       sigma: Union[Number,Array]
@@ -1412,36 +1397,23 @@ class Inference():
 #        return [x_max, y_max, np.abs(x_next_max-x_max), np.abs(y_next_max-y_max), npoints]
 
 
-class Plotter():
+class Plotter(ObjectManager):
     """
     """
-    allowed_objects: List[str] = ["DataMain", "NFMain"]
-    allowed_types = Union["DataMain", "NFMain"] # type: ignore
+    managed_object_name: str
     def __init__(self,
-                 obj: allowed_types
-                 ) -> None:
+                 managed_object: Any
+                ) -> None:
         """
         """
         # Attributes type declatation
-        self._obj: allowed_types # type: ignore
-        self._managed_object: str
+        self._ManagedObject: Any
+        # Initialize parent ManagedObject class (sets self._ManagedObject)
+        super().__init__(managed_object = managed_object)
         # Set verbosity
-        verbose, _ = obj.get_verbosity(obj._verbose)
+        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Plotter.\n", show = verbose)
-        self.__check_set_object(obj = obj)
-
-    @property
-    def managed_object(self) -> str:
-        return self._managed_object
-
-    def __check_set_object(self,
-                           obj: allowed_types
-                          ) -> None:
-        self._obj = obj
-        self._managed_object = obj.managed_object
-        if self._managed_object not in self.allowed_objects:
-            raise InvalidInput("Predictions are not supported for the object"+self._managed_object+str("."))
 
     def plot_corr_matrix(self,
                          X: Array

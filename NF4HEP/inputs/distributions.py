@@ -16,7 +16,7 @@ tfd = tfp.distributions
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
 from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
-from NF4HEP.base import Name, FileManager, ParsManager, PredictionsManager, FiguresManager, Inference, Plotter
+from NF4HEP.base import Name, FileManager, PredictionsManager, FiguresManager, Inference, Plotter
 from NF4HEP.utils import mplstyle_path
 from NF4HEP import print
 from NF4HEP.utils.verbosity import Verbosity
@@ -339,7 +339,7 @@ class Distribution(Verbosity):
         print(header_string, "\nInitialize Distributions object.\n", show = verbose)
         self._ndims = ndims
         self.seed = seed if seed is not None else 0
-        self.__set_dtype(dtype,verbose=verbose_sub)
+        self.dtype = dtype
         self._default_dist = default_dist if default_dist is not None else ""
         self._tf_dist_str: str = tf_dist if type(tf_dist) is str else ""
         self._tf_dist_dic: dict = tf_dist if type(tf_dist) is dict else {}
@@ -349,18 +349,32 @@ class Distribution(Verbosity):
         else:
             self.__set_base_tf_distribution()
 
-    def __set_dtype(self,
-                    dtype: Optional[DTypeStr] = None,
-                    verbose: Optional[IntBool] = None
-                   ) -> None:
+    @property
+    def dtype(self) -> DTypeStr:
+        return self._dtype
+
+    @dtype.setter
+    def dtype(self,
+              dtype: Optional[DTypeStr]) -> None:
         if dtype is not None:
             try:
                 self._dtype = np.dtype(dtype)
             except:
                 self._dtype = np.dtype("float32")
-                print("Data type",dtype,"is not supported. Data type set to 'float32'.")
+                print("WARNING: Data type",dtype,"is not supported. Data type set to 'float32'.")
         else:
             self._dtype = np.dtype("float32")
+
+    @property
+    def seed(self) -> int:
+        return self._seed
+
+    @seed.setter
+    def seed(self,
+             seed: int
+            ) -> None:
+        self._seed = seed
+        utils.reset_random_seeds(self._seed)
 
     def __check_inputs(self) -> None:
         if self._default_dist != "" and self._default_dist not in self.supported_default_base_distributions:
@@ -389,7 +403,7 @@ class Distribution(Verbosity):
         verbose, verbose_sub = self.get_verbosity(verbose)
         print(header_string,"\nSetting base distribution (from tfp distributions)\n", show = verbose)
         self.base_distribution = None
-        if self._tf_dist_str != "" and self._tf_dist_dic is {}:
+        if self._tf_dist_str != "" and self._tf_dist_dic == {}:
             tf_dist_str = str(self._tf_dist_str)
             if "(" in tf_dist_str:
                 try:
@@ -437,13 +451,13 @@ class Distribution(Verbosity):
     def Normal(self) -> tfp.distributions.Normal:
         dist_string = "tfd.Normal(loc=np.array(0,dtype='"+str(self._dtype)+"'), scale=1, allow_nan_stats=False)"
         dist=eval(dist_string)
-        return dist
+        return dist_string, dist
 
     def Normal_mixture(self) -> tfp.distributions.Mixture:
         ### Mix_gauss will be our target distribution.
         dist_string = "tfd.Mixture(cat=tfd.Categorical(probs=[0.3,.7]),components=[tfd.Normal(loc=np.array(3.3,dtype='"+str(self._dtype)+"'), scale=0.4),tfd.Normal(loc=np.array(1.8,dtype='"+str(self._dtype)+"'), scale=0.2)])"
         dist=eval(dist_string)
-        return dist
+        return dist_string, dist
 
     def RandCorr(self,
                  ndims: int,

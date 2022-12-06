@@ -1,11 +1,23 @@
 __all__ = ["NFFileManager",
+           "NFChain",
            "NFMain",
            "NFManager",
+           "NFTrainer",
            "NFPredictionsManager",
            "NFInference",
            "NFPlotter"]
 
+from datetime import datetime
 import numpy as np
+import tensorflow as tf # type: ignore
+import tensorflow.compat.v1 as tf1 # type: ignore
+from tensorflow.keras import Input # type: ignore
+from tensorflow.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses # type: ignore
+from tensorflow.keras.models import Model # type: ignore
+from tensorflow.keras.layers import Layer #type: ignore
+import tensorflow_probability as tfp # type: ignore
+tfd = tfp.distributions
+tfb = tfp.bijectors
 
 from asyncio import base_subprocess
 from numpy import typing as npt
@@ -19,10 +31,10 @@ from NF4HEP.bijectors import arqspline
 from NF4HEP.bijectors import crqspline
 from NF4HEP.bijectors import maf
 from NF4HEP.bijectors import realnvp
-from NF4HEP.bijectors.arqspline import ARQSplineChain
-from NF4HEP.bijectors.crqspline import CRQSplineChain
-from NF4HEP.bijectors.maf import MAFChain
-from NF4HEP.bijectors.realnvp import RealNVPChain, RealNVPBijector, RealNVPNetwork
+from NF4HEP.bijectors.arqspline import ARQSplineNetwork, ARQSplineBijector
+from NF4HEP.bijectors.crqspline import CRQSplineNetwork, CRQSplineBijector
+from NF4HEP.bijectors.maf import MAFNetwork, MAFBijector
+from NF4HEP.bijectors.realnvp import RealNVPNetwork, RealNVPBijector
 from NF4HEP.utils import corner
 from NF4HEP.utils import utils
 from NF4HEP.utils.corner import extend_corner_range
@@ -41,7 +53,7 @@ header_string_2 = "------------------------------"
 class NFFileManager(FileManager):
     """
     """
-    managed_object: str = "NF"
+    managed_object_name: str = "NFMain"
     def __init__(self,
                  name: Optional[str] = None,
                  input_file: Optional[StrPath] = None,
@@ -67,19 +79,19 @@ class NFFileManager(FileManager):
         # Initialize object
         self.input_data_main_file = input_data_main_file if input_data_main_file is None else Path(input_data_main_file)
 
-    @property
-    def ManagedObject(self) -> "NFMain":
-        return self._ManagedObject
-
-    @ManagedObject.setter
-    def ManagedObject(self,
-                      managed_object: "NFMain"
-                     ) -> None:
-        try:
-            self._ManagedObject
-            raise Exception("The 'ManagedObject' attribute is automatically set when initialising the NFMain object and cannot be replaced.")
-        except:
-            self._ManagedObject = managed_object
+    #@property
+    #def ManagedObject(self) -> "NFMain":
+    #    return self._ManagedObject
+#
+    #@ManagedObject.setter
+    #def ManagedObject(self,
+    #                  managed_object: "NFMain"
+    #                 ) -> None:
+    #    try:
+    #        self._ManagedObject
+    #        raise Exception("The 'ManagedObject' attribute is automatically set when initialising the NFMain object and cannot be replaced.")
+    #    except:
+    #        self._ManagedObject = managed_object
 
     @property
     def input_data_main_file(self) -> Optional[Path]:
@@ -211,86 +223,105 @@ class NFFileManager(FileManager):
         verbose, verbose_sub = self.get_verbosity(verbose)
 
 
-class NFChain(Verbosity):
-    allowed_chain_types: TypeAlias = Union[ARQSplineChain,CRQSplineChain,MAFChain,RealNVPChain]
+class NFChain(tfb.Chain, Verbosity): # type: ignore
     allowed_bijector_types: TypeAlias = Union[ARQSplineBijector,CRQSplineBijector,MAFBijector,RealNVPBijector]
     allowed_NN_types: TypeAlias = Union[ARQSplineNetwork,CRQSplineNetwork,MAFNetwork,RealNVPNetwork]
     """
+    model_chain_inputs can be of the following form:
+    .. code-block:: python
+
+        model_chain_inputs = {"nbijectors": 2,
+                              "batch_normalization": False}
     """
     def __init__(self,
-                 flow_name: str,
-                 chain: allowed_chain_types,
+                 bijector: allowed_bijector_types,
+                 model_chain_inputs: Optional[Dict[str, Any]] = None,
                  verbose: Optional[IntBool] = None
                 ) -> None:
-        """
-        """
-        # Declaration of needed types for attributes
-        self._Chain: NFChain.allowed_chain_types
-        self._name: str
+        # Attributes type declarations
+        self._batch_normalization: bool
         self._Bijector: NFChain.allowed_bijector_types
+        self._model_chain_inputs: Dict[str, Any]
         self._nbijectors: int
-        self._NN: NFChain.allowed_NN_types
         # Initialise parent Verbosity class
-        super().__init__(verbose)
+        Verbosity.__init__(self, verbose)
         # Set verbosity
         verbose, _ = self.get_verbosity(verbose)
         # Initialize object
-        print(header_string_1, "\nInitializing Chain object.\n", show = verbose)
-        self.Chain = chain
+        print(header_string_1, "\nInitializing NFChain object.\n", show = verbose)
+        self.__set_model_chain_inputs(model_chain_inputs = model_chain_inputs, verbose = verbose)
+        self._Bijector = bijector
+        ndims = self._bijector._ndims
+        permutation = tf.cast(np.concatenate((np.arange(int(ndims/2), ndims), np.arange(0, int(ndims/2)))), tf.int32)
+        Permute = tfb.Permute(permutation=permutation)
+        print("\n",tfb.BatchNormalization())
+        print("\n",self._bijector)
+        print("\n",Permute)
+        self._bijectors = []
+        for _ in range(self._num_bijectors):
+            if self._batch_normalization:
+                self._bijectors.append(tfb.BatchNormalization())
+            self._bijectors.append(self._Bijector)
+            self._bijectors.append(Permute)
+        tfb.Chain.__init__(self, bijectors=list(reversed(self._bijectors[:-1])), name=self.name)
 
     @property
     def allowed_chains_names(self) -> List[str]:
-        return ["ARQSplineFlow","CRQSplineFlow","MAFFlow","RealNVPFlow"]
-
-    @property
-    def Chain(self) -> allowed_chain_types:
-        return self._Chain
-
-    @Chain.setter
-    def Chain(self,
-              chain: allowed_chain_types,
-             ) -> None:
-        try:
-            self._Chain
-            raise Exception("The 'Chain' attribute is automatically set when initialising the NFChain object and cannot be replaced.")
-        except:
-            if chain.name in self.allowed_chains_names:
-                self._Chain = chain
-                self._chain_name = chain.name
-            else:
-                raise Exception("The chain",chain.name,"is not supported.")
-
-    @property
-    def chain_name(self) -> str:
-        return self._chain_name
-
-    @property
-    def Bijector(self) -> allowed_bijector_types:
-        return self._Chain.Bijector
+        return ["ARQSplineChain","CRQSplineChain","MAFChain","RealNVPChain"]
 
     @property
     def NN(self) -> allowed_NN_types:
-        return self.Bijector._NN
+        return self._Bijector._NN
+
+    @property
+    def batch_normalization(self) -> bool:
+        return self._batch_normalization
+
+    @property
+    def Bijector(self) -> Union["ARQSplineBijector", "CRQSplineBijector", "MAFBijector", "RealNVPBijector"]: # type: ignore
+        return self._Bijector
+
+    @property
+    def model_chain_inputs(self) -> Dict[str, Any]:
+        return self._model_chain_inputs
 
     @property
     def nbijectors(self) -> int:
-        return self.Chain.nbijectors
+        return self._nbijectors
 
-    def __call__(self) -> allowed_bijector_types:
-        return self.Chain
+    @property
+    def ndims(self) -> int:
+        return self._Bijector._ndims
+
+    def __set_model_chain_inputs(self,
+                                 model_chain_inputs: Optional[Dict[str, Any]] = None,
+                                 verbose: Optional[IntBool] = None
+                                ) -> None:
+        if model_chain_inputs is None:
+            model_chain_inputs = {}
+        try:
+            self._num_bijectors = model_chain_inputs["nbijectors"]
+        except:
+            print("WARNING: The 'model_chain_inputs' argument misses the mandatory 'nbijectors' item. The corresponding attribute will be set to a default of 2.")
+        utils.check_set_dict_keys(dic = model_chain_inputs, 
+                                  keys = ["nbijectors","batch_normalization"],
+                                  vals = [2,False],
+                                  verbose = verbose)
+        self._batch_normalization = model_chain_inputs["batch_normalization"]
+        self._model_chain_inputs = model_chain_inputs
 
 
 class NFMain(Verbosity):
     managed_object : str = "NFMain"
-    allowed_chain_types: TypeAlias = Union[ARQSplineChain,CRQSplineChain,MAFChain,RealNVPChain]
-
+    allowed_bijector_types: TypeAlias = Union[ARQSplineBijector,CRQSplineBijector,MAFBijector,RealNVPBijector]
     """
     """
     def __init__(self,
                  file_manager: NFFileManager,
                  data: DataMain,
-                 base_distribution: Distribution,
-                 nf_chain: NFChain,
+                 bijector: allowed_bijector_types,
+                 model_chain_inputs: Optional[Dict[str, Any]] = None,
+                 base_distribution: Optional[Union[str,tfp.distributions.distribution.AutoCompositeTensorDistribution]] = None, # type: ignore
                  seed: Optional[int] = None,
                  verbose: IntBool = True
                 ) -> None:
@@ -299,10 +330,12 @@ class NFMain(Verbosity):
         # Attributes type declatation
         self._log: LogPredDict
         self._name: str
-        self._BaseDistribution: Distribution
+        self._BaseDistribution: tfp.distributions.distribution.AutoCompositeTensorDistribution
+        self._BaseDistribution_string: str
         self._Data: DataMain
         self._Figures: NFFiguresManager
         self._FileManager: NFFileManager
+        self._Bijector: NFMain.allowed_bijector_types
         self._Chain: NFChain
         self._Inference: NFInference
         self._NFManager: NFManager
@@ -328,26 +361,19 @@ class NFMain(Verbosity):
             self.seed = seed if seed is not None else 0
             print(header_string_2,"\nInitializing new NFMain object.\n", show = verbose)
             self.__init_data_main(data = data, verbose = verbose)
-            if base_distribution is not None:
-                self.BaseDistribution = base_distribution
-            else:
-                self.BaseDistribution = Distribution(ndims = self.Data.DataManager.ndims,
-                                                     seed = seed,
-                                                     dtype = self.Data.InputData.dtype_required,
-                                                     default_dist = "Normal",
-                                                     tf_dist = None,
-                                                     verbose = verbose)
-            if nf_chain is not None:
-                self.Chain = nf_chain
-            else:
-                raise Exception("When no input file is specified the 'nf_chain' argument needs to be different from 'None'.")
+            self.BaseDistribution = base_distribution
+            self.Bijector = bijector
+            self.Chain = NFChain(bijector = bijector,
+                                 model_chain_inputs = model_chain_inputs,
+                                 verbose = verbose_sub)
             self.NFManager = NFManager(nf_main = self, verbose = verbose)
             self.Trainer = NFTrainer(nf_main = self, verbose = verbose)
         else:
             print(header_string_2,"\nLoading existing NFMain object.\n", show = verbose)
-            for attr in [nf_chain,base_distribution,data,seed]:
+            for attr in [bijector,model_chain_inputs,base_distribution,data,seed]:
                 if attr is not None:
                     print(header_string_2,"\nWarning: an input file was specified and the argument '",attr,"' will be ignored. The related attribute will be set from the input file.\n", show = True)
+            self.FileManager.load(verbose = verbose)
         self.Inference = NFInference(nf_main = self)
         print(header_string_2,"\nSetting Inference.\n", show = verbose)
         self.Plotter = NFPlotter(nf_main = self)
@@ -429,15 +455,96 @@ class NFMain(Verbosity):
         print(header_string_2,"\nSetting Data.\n", show = self.verbose)
 
     @property
-    def BaseDistribution(self) -> Distribution:
+    def BaseDistribution(self) -> Union[str,tfp.distributions.distribution.AutoCompositeTensorDistribution]:
         return self._BaseDistribution
 
     @BaseDistribution.setter
     def BaseDistribution(self,
-             base_distribution: Distribution
-            ) -> None:
-        self._BaseDistribution = base_distribution
-        print(header_string_2,"\nSetting BaseDistriburion.\n", show = self.verbose)
+                         base_distribution: Optional[Union[str,tfp.distributions.distribution.AutoCompositeTensorDistribution]] = None, # type: ignore
+                        ) -> None:
+        dist_str: str = str(base_distribution) if type(base_distribution) is str else ""
+        dist_dic: dict = dict(base_distribution) if type(base_distribution) is dict else {}
+        dist_obj: tfp.distributions.distribution.AutoCompositeTensorDistribution = base_distribution if (type(base_distribution) is not str and type(base_distribution) is not dict) else None
+        self.base_distribution = None
+        if type(base_distribution) is str:
+            dist = None
+            if "(" in dist_str:
+                try:
+                    eval("tfd." + dist_str.replace("tfd.", ""))
+                    dist_string = "tfd." + dist_str.replace("tfd.", "")
+                except:
+                    eval(dist_str)
+                    dist_string = dist_str
+            else:
+                try:
+                    eval("tfd." + dist_str.replace("tfd.", "") +"()")
+                    dist_string = "tfd." + dist_str.replace("tfd.", "") +"()"
+                except:
+                    eval(dist_str +"()")
+                    dist_string = dist_str +"()"
+        elif type(base_distribution) is dict:
+            dist = None
+            try:
+                name = dist_dic["name"]
+            except:
+                raise Exception("The distribution ", str(dist_dic), " has unspecified name.")
+            try:
+                args = dist_dic["args"]
+            except:
+                args = []
+            try:
+                kwargs = dist_dic["kwargs"]
+            except:
+                kwargs = {}
+            dist_string = utils.build_method_string_from_dict("tfd", name, args, kwargs)
+        elif dist_obj is not None:
+            try:
+                eval(dist_obj)
+                dist_string = None
+                dist = dist_obj
+            except:
+                raise Exception("Could not set base distribution. The 'distribution' input argument does not have a valid format.")
+        else:
+            raise Exception("Could not set base distribution. The 'distribution' input argument does not have a valid format.")
+        if dist_string is None and dist is not None:
+            self._BaseDistribution_string = str(dist_obj)
+            self._BaseDistribution = dist
+        elif dist_string is not None and dist is None:
+            try:
+                dist = eval(dist_string)
+                self._BaseDistribution_string = "tfd.Sample("+dist_string+",sample_shape=["+str(self.ndims)+"])"
+                self._BaseDistribution = tfd.Sample(dist,sample_shape=[self.ndims])
+                print("Base distribution set to:", self._BaseDistribution_string, ".\n", show = self._verbose)
+            except Exception as e:
+                print(e)
+                raise Exception("Could not set base distribution", dist_string, "\n")
+        else:
+            raise Exception("Could not set base distribution", dist_string, "\n")
+        timestamp = "datetime_"+datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%fZ")[:-3]
+        self._log[timestamp] = {"action": "base distribution set",
+                                "distribution": self._BaseDistribution_string}
+
+    @property
+    def Bijector(self) -> allowed_bijector_types:
+        return self._Bijector
+
+    @Bijector.setter
+    def Bijector(self,
+                 bijector: Optional[allowed_bijector_types]
+                ) -> None:
+        try:
+            self._Bijector
+            raise Exception("The 'Bijector' attribute is automatically set when initialising the NFMain object and cannot be manually set.")
+        except:
+            if bijector is not None:
+                self._Bijector = bijector
+            else:
+                raise Exception("When no input file is specified the 'bijector' argument needs to be different from 'None'.")
+        print(header_string_2,"\nSetting NF Bijector.\n", show = self.verbose)
+
+    @property
+    def ndims(self):
+        return self.Bijector._ndims
 
     @property
     def Chain(self) -> NFChain:
@@ -583,7 +690,7 @@ class NFPredictionsManager(PredictionsManager):
     def __init__(self,
                  nf_main: NFMain
                 ) -> None:
-        super().__init__(obj = nf_main)
+        super().__init__(managed_object = nf_main)
 
     def init_predictions(self):
         pass
@@ -601,7 +708,7 @@ class NFFiguresManager(FiguresManager):
     def __init__(self,
                  nf_main: NFMain
                 ) -> None:
-        super().__init__(obj = nf_main)
+        super().__init__(managed_object = nf_main)
 
 
 class NFInference(Inference):
@@ -610,7 +717,7 @@ class NFInference(Inference):
     def __init__(self,
                  nf_main: NFMain
                 ) -> None:
-        super().__init__(obj = nf_main)
+        super().__init__(managed_object = nf_main)
 
 
 class NFPlotter(Plotter):
@@ -619,4 +726,4 @@ class NFPlotter(Plotter):
     def __init__(self,
                  nf_main: NFMain
                 ) -> None:
-        super().__init__(obj = nf_main)
+        super().__init__(managed_object = nf_main)

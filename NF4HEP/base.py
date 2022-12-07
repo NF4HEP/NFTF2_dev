@@ -644,8 +644,9 @@ class FileManager(ABC,ObjectManager,Verbosity):
             [log, dictionary] = self.__load_json(input_json_file = self.input_log_file, # type: ignore
                                                  verbose = verbose
                                                 )
-            self.ManagedObject._log.update(dictionary)
-            self.ManagedObject._log = {**self.ManagedObject._log, **log}
+            self.ManagedObject.log = dictionary
+            #self.ManagedObject._log.update(dictionary)
+            self.ManagedObject.log = log
         else:
             raise Exception("Input file not defined.")
 
@@ -659,7 +660,7 @@ class FileManager(ABC,ObjectManager,Verbosity):
             [log, dictionary] = self.__load_h5(input_h5_file = self.input_predictions_h5_file,
                                                verbose = verbose
                                               )
-            self.ManagedObject._log = {**self.ManagedObject._log, **log}
+            self.ManagedObject.log = log
             self.ManagedObject.Predictions._predictions_dict.update(dictionary["Predictions"])
             self.ManagedObject.Figures._figures_dict.update(dictionary["Figures"])
         else:
@@ -779,7 +780,7 @@ class FileManager(ABC,ObjectManager,Verbosity):
                                        output_file = self.output_predictions_h5_file,
                                        overwrite = overwrite,
                                        verbose = verbose)
-        self.ManagedObject._log = {**self.ManagedObject._log, **log}
+        self.ManagedObject.log = log
 
 
 class PredictionsManager(ABC,ObjectManager):
@@ -800,7 +801,7 @@ class PredictionsManager(ABC,ObjectManager):
         ABC.__init__(self)
         ObjectManager.__init__(self, managed_object = managed_object)
         # Set verbosity
-        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
+        verbose, _ = self.ManagedObject.get_verbosity(self.ManagedObject.verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Predictions.\n", show = verbose)
         self._predictions_dict = {}
@@ -837,7 +838,7 @@ class FiguresManager(ObjectManager):
         # Initialize parent ManagedObject class (sets self._ManagedObject)
         super().__init__(managed_object = managed_object)
         # Set verbosity
-        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
+        verbose, _ = self.ManagedObject.get_verbosity(self.ManagedObject.verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Figures.\n", show = verbose)
         self._figures_dict = {}
@@ -852,19 +853,19 @@ class FiguresManager(ObjectManager):
                             ) -> None:
         """
         """
-        verbose, _ = self._ManagedObject.get_verbosity(verbose)
+        verbose, _ = self.ManagedObject.get_verbosity(verbose)
         print(header_string_2,"\nResetting predictions.\n", show = verbose)
         try:
-            self._ManagedObject.FileManager.output_figures_folder
+            self.ManagedObject.FileManager.output_figures_folder
         except:
             print(header_string_2,"\nThe object does not have an associated figures folder.\n")
             return
         if delete_figures:
-            self._ManagedObject.FileManager.check_delete_all_files_in_path(self._ManagedObject.FileManager.output_figures_folder)
+            self.ManagedObject.FileManager.check_delete_all_files_in_path(self.ManagedObject.FileManager.output_figures_folder)
             self._figures_dict = {}
             print(header_string_2,"\nAll predictions and figures have been deleted and the 'predictions' attribute has been initialized.\n", show = verbose)
         else:
-            self._figures_dict = self.check_figures_dic(output_figures_folder=self._ManagedObject.FileManager.output_figures_folder)
+            self._figures_dict = self.check_figures_dic(output_figures_folder=self.ManagedObject.FileManager.output_figures_folder)
             print(header_string_2,"\nAll predictions have been deleted and the 'predictions' attribute has been initialized. No figure file has been deleted.\n", show = verbose)
 
     def check_figures_dic(self,
@@ -902,14 +903,14 @@ class FiguresManager(ObjectManager):
                      ) -> None:
         """
         """
-        verbose, verbose_sub = self._ManagedObject.get_verbosity(verbose)
+        verbose, verbose_sub = self.ManagedObject.get_verbosity(verbose)
         print(header_string_2,"\nResetting figures.\n", show = verbose)
         start = timer()
         timestamp = utils.generate_timestamp()
         self.check_delete_figures(delete_figures = delete_figures, 
                                   verbose = verbose_sub)
         end = timer()
-        self._ManagedObject._log[utils.generate_timestamp()] = {"action": "reset predictions"}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "reset predictions"}}
         print(header_string_2,"\nFigures reset in", end-start, "s.\n", show = verbose)
 
     def show_figures(self,
@@ -933,7 +934,7 @@ class FiguresManager(ObjectManager):
                        ) -> Path:
         """
         """
-        verbose, verbose_sub = self._ManagedObject.get_verbosity(verbose)
+        verbose, verbose_sub = self.ManagedObject.get_verbosity(verbose)
         print(header_string_2,"\nChecking and updating figures dictionary,\n", show = verbose)
         figure_file = Path(figure_file).absolute()
         new_figure_file = figure_file
@@ -944,18 +945,18 @@ class FiguresManager(ObjectManager):
                 for k, v in self.figures_dict.items():
                     if figure_file in v:
                         timestamp = k
-                    old_figure_file = self._ManagedObject.FileManager.check_rename_path(from_path = self._ManagedObject.FileManager.output_figures_folder.joinpath(figure_file),
-                                                                         timestamp = timestamp,
-                                                                         verbose = verbose_sub)
+                    old_figure_file = self.ManagedObject.FileManager.check_rename_path(from_path = self.ManagedObject.FileManager.output_figures_folder.joinpath(figure_file),
+                                                                                       timestamp = timestamp,
+                                                                                       verbose = verbose_sub)
                     if timestamp is not None:
                         self.figures_dict[timestamp] = [Path(str(f).replace(str(figure_file),str(old_figure_file))) for f in v]
         elif overwrite == "dump":
-            new_figure_file = self._ManagedObject.FileManager.generate_dump_file_name(figure_file, timestamp=timestamp)
+            new_figure_file = self.ManagedObject.FileManager.generate_dump_file_name(figure_file, timestamp=timestamp)
         if timestamp is None:
             timestamp = utils.generate_timestamp()
-        self._ManagedObject._log[utils.generate_timestamp()] = {"action": "checked/updated figures dictionary",
-                                                      "figure_file": figure_file,
-                                                      "new_figure_file": new_figure_file}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "checked/updated figures dictionary",
+                                                               "figure_file": figure_file,
+                                                               "new_figure_file": new_figure_file}}
         #self.save_log(overwrite=True, verbose=verbose_sub)
         return new_figure_file
 
@@ -977,7 +978,7 @@ class Inference(ObjectManager):
         # Initialize parent ManagedObject class (sets self._ManagedObject)
         super().__init__(managed_object = managed_object)
         # Set verbosity
-        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
+        verbose, _ = self.ManagedObject.get_verbosity(self.ManagedObject.verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Inference.\n", show = verbose)
 
@@ -1411,7 +1412,7 @@ class Plotter(ObjectManager):
         # Initialize parent ManagedObject class (sets self._ManagedObject)
         super().__init__(managed_object = managed_object)
         # Set verbosity
-        verbose, _ = self._ManagedObject.get_verbosity(self._ManagedObject._verbose)
+        verbose, _ = self.ManagedObject.get_verbosity(self.ManagedObject.verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Plotter.\n", show = verbose)
 

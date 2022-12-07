@@ -349,7 +349,6 @@ class NFMain(Verbosity):
         # Initialize object
         timestamp = utils.generate_timestamp()
         print(header_string_1, "\nInitializing NFMain object.\n", show = verbose)
-        self._log = {}
         print(header_string_2,"\nSetting FileManager.\n", show = verbose)
         self.FileManager = file_manager # also sets the NFMain managed object FileManager attribute
         self.FileManager.ManagedObject = self
@@ -379,10 +378,10 @@ class NFMain(Verbosity):
         self.Plotter = NFPlotter(nf_main = self)
         print(header_string_2,"\nSetting Plotter.\n", show = verbose)
         if self.FileManager.input_file is None:
-            self._log[timestamp] = {"action": "object created from input arguments"}
+            self.log = {timestamp: {"action": "object created from input arguments"}}
             #self.FileManager.save(timestamp = timestamp, overwrite = False, verbose = verbose_sub)
         else:
-            self._log[utils.generate_timestamp()] = {"action": "object reconstructed from loaded files"}
+            self.log = {timestamp: {"action": "object reconstructed from loaded files"}}
             #self.FileManager.save_log(timestamp = timestamp, overwrite = True, verbose = verbose_sub)
         self.FileManager.save_log(timestamp = timestamp, overwrite = bool(self.FileManager.input_file), verbose = verbose_sub)
         
@@ -399,6 +398,23 @@ class NFMain(Verbosity):
                "_Trainer"
               ]
         return tmp
+
+    @property
+    def log(self) -> LogPredDict:
+        return self._log
+
+    @log.setter
+    def log(self,
+            log_action: LogPredDict
+           ) -> None:
+        try: 
+            self._log
+        except:
+            self._log = {}
+        if isinstance(log_action,dict):
+            self._log = {**self._log, **log_action}
+        else:
+            raise TypeError("Only log-type dictionaries can be added to the '_log' dictionary.")
 
     @property
     def FileManager(self) -> NFFileManager:
@@ -521,8 +537,8 @@ class NFMain(Verbosity):
         else:
             raise Exception("Could not set base distribution", dist_string, "\n")
         timestamp = "datetime_"+datetime.now().strftime("%Y_%m_%d_%H_%M_%S_%fZ")[:-3]
-        self._log[timestamp] = {"action": "base distribution set",
-                                "distribution": self._BaseDistribution_string}
+        self.log = {utils.generate_timestamp(): {"action": "base distribution set",
+                                                 "distribution": self._BaseDistribution_string}}
 
     @property
     def Bijector(self) -> allowed_bijector_types:

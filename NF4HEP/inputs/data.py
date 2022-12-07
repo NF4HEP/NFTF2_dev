@@ -33,7 +33,7 @@ from sklearn.preprocessing import StandardScaler #type: ignore
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
 from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
-from NF4HEP.base import Name, FileManager, PredictionsManager, FiguresManager, Inference, Plotter, InvalidInput
+from NF4HEP.base import ObjectManager, Name, FileManager, PredictionsManager, FiguresManager, Inference, Plotter, InvalidInput
 from NF4HEP.utils import mplstyle_path
 from NF4HEP import print
 from NF4HEP.utils.verbosity import Verbosity
@@ -221,7 +221,7 @@ class DataFileManager(FileManager):
             [log, dictionary] = self._FileManager__load_h5(input_h5_file = self.input_idx_h5_file, # type: ignore
                                                            verbose = verbose
                                                            )
-            self.ManagedObject._log = {**self.ManagedObject._log, **log}
+            self.ManagedObject.log = log
             self.ManagedObject.DataManager.__dict__.update(dictionary)
         else:
             raise Exception("Input file not defined.")
@@ -232,7 +232,7 @@ class DataFileManager(FileManager):
             [log, dictionary] = self._FileManager__load_h5(input_h5_file = self.input_preprocessing_h5_file, # type: ignore
                                                            verbose = verbose
                                                            )
-            self.ManagedObject._log = {**self.ManagedObject._log, **log}
+            self.ManagedObject.log = log
             self.ManagedObject.DataManager.__dict__.update(dictionary)
         else:
             raise Exception("Input file not defined.")
@@ -268,8 +268,8 @@ class DataFileManager(FileManager):
                                                        dtype = [dtype_stored,dtype_required],
                                                        verbose = verbose_sub)
         end = timer()
-        self.ManagedObject._log[utils.generate_timestamp()] = {"action": "loaded DataSamples",
-                                                               "files names": [input_file.name]}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "loaded DataSamples",
+                                                               "files names": [input_file.name]}}
         print(header_string_2,"\nData samples file\n",input_file,"\nloaded in", str(end-start), ".\n", show = verbose)
         if self._load_on_RAM:
             print(header_string_2,"\nSamples loaded on RAM.\n", show = verbose)
@@ -319,8 +319,8 @@ class DataFileManager(FileManager):
         except:
             h5_out.close()
             raise Exception("Failed to save data. The file\n",output_h5_file,"\nhas been safely closed.")
-        self.ManagedObject._log[utils.generate_timestamp()] = {"action": "saved samples h5",
-                                                               "file names": [output_h5_file.name]}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "saved samples h5",
+                                                               "file names": [output_h5_file.name]}}
         end = timer()
         self.print_save_info(filename = output_h5_file,
                              time = str(end-start),
@@ -346,7 +346,7 @@ class DataFileManager(FileManager):
                                                    output_file = self.output_object_h5_file,
                                                    overwrite = overwrite,
                                                    verbose = verbose)
-        self.ManagedObject._log = {**self.ManagedObject._log, **log}
+        self.ManagedObject.log = log
 
     def save_data_idx(self, 
                     timestamp: Optional[str] = None,
@@ -364,7 +364,7 @@ class DataFileManager(FileManager):
                                                    output_file = self.output_idx_h5_file,
                                                    overwrite = overwrite,
                                                    verbose = verbose)
-        self.ManagedObject._log = {**self.ManagedObject._log, **log}
+        self.ManagedObject.log = log
 
     def save_data_preprocessing(self, 
                                 timestamp: Optional[str] = None,
@@ -382,7 +382,7 @@ class DataFileManager(FileManager):
                                               output_file = self.output_preprocessing_h5_file,
                                               overwrite = overwrite,
                                               verbose = verbose)
-        self.ManagedObject._log = {**self.ManagedObject._log, **log}
+        self.ManagedObject.log = log
 
 
 class DataParsManager(Verbosity):
@@ -724,7 +724,6 @@ class DataMain(Verbosity):
         # Initialize object
         timestamp = utils.generate_timestamp()
         print(header_string_1, "\nInitializing DataMain object.\n", show = verbose)
-        self._log = {}
         print(header_string_2,"\nSetting FileManager.\n", show = verbose)
         self.FileManager = file_manager # also sets the DataMain managed object FileManager attribute and load_on_RAM DataMain attribute
         print(header_string_2,"\nSetting Predictions.\n", show = self.verbose)
@@ -761,10 +760,10 @@ class DataMain(Verbosity):
         self.Plotter = DataPlotter(data_main = self)
         print(header_string_2,"\nSetting Plotter.\n", show = verbose)
         if self.FileManager.input_file is None:
-            self._log[timestamp] = {"action": "object created from input arguments"}
+            self.log = {timestamp: {"action": "object created from input arguments"}}
             self.FileManager.save(timestamp = timestamp, overwrite = False, verbose = verbose_sub)
         else:
-            self._log[utils.generate_timestamp()] = {"action": "object reconstructed from loaded files"}
+            self.log = {timestamp: {"action": "object reconstructed from loaded files"}}
             self.FileManager.save_log(timestamp = timestamp, overwrite = True, verbose = verbose_sub)
 
     @property
@@ -782,6 +781,23 @@ class DataMain(Verbosity):
                "_Predictions"
               ]
         return tmp
+
+    @property
+    def log(self) -> LogPredDict:
+        return self._log
+
+    @log.setter
+    def log(self,
+            log_action: LogPredDict
+           ) -> None:
+        try: 
+            self._log
+        except:
+            self._log = {}
+        if isinstance(log_action,dict):
+            self._log = {**self._log, **log_action}
+        else:
+            raise TypeError("Only log-type dictionaries can be added to the '_log' dictionary.")
 
     @property
     def FileManager(self) -> DataFileManager:
@@ -1873,10 +1889,11 @@ class DataMain(Verbosity):
     #                           "file name": figure_file_name}
     #    print("\n"+header_string+"\nFigure file\n\t", r"%s" % (figure_file_name), "\ncreated and saved in", str(end-start), "s.\n", show = verbose)
 
-class DataManager(Verbosity):
+class DataManager(ObjectManager,Verbosity):
     """
     Manages input data
     """
+    managed_object_name: str = "DataMain"
     def __init__(self,
                  data_main: DataMain,
                  npoints: Optional[List[int]] = None, # list with [n_train, n_val, n_test]
@@ -1906,18 +1923,19 @@ class DataManager(Verbosity):
         self._test_fraction: float
         self._train_val_range: range
         self._test_range: range
-        self.DataMain: DataMain
-        self.TestData: DataSamples
-        self.TrainData: DataSamples
-        self.ValData: DataSamples
+        self._ManagedObject: DataMain
+        self._TestData: DataSamples
+        self._TrainData: DataSamples
+        self._ValData: DataSamples
+        # Initialize parent ManagedObject class (sets self._ManagedObject)
+        ObjectManager.__init__(self, managed_object = data_main)
         # Initialize parent Verbosity class
-        super().__init__(verbose)
+        Verbosity.__init__(self, verbose = verbose)
         # Set verbosity
         verbose, verbose_sub = self.get_verbosity(verbose)
         # Initialize object
         print(header_string_1,"\nInitializing DataManager.\n", show = verbose)
-        self.DataMain = data_main
-        self._ndims = self.DataMain.InputData._ndims
+        self._ndims = self.ManagedObject.InputData._ndims
         self.__check_set_npoints(npoints = npoints)
         self.__check_set_preprocessing(preprocessing = preprocessing)
         self.__define_test_fraction()
@@ -1938,10 +1956,10 @@ class DataManager(Verbosity):
                "_rotationX",
                "_scalerX",
                "_scalerY",
-               "DataMain",
-               "TrainData",
-               "ValData",
-               "TestData",]
+               "_ManagedObject",
+               "_TrainData",
+               "_ValData",
+               "_TestData",]
         return tmp
 
     @property
@@ -2020,12 +2038,51 @@ class DataManager(Verbosity):
     def train_val_range(self) -> range:
         return self._train_val_range
 
+    @property
+    def TestData(self) -> DataSamples:
+        return self._TestData
+
+    @TestData.setter
+    def TestData(self,
+                 test_data: DataSamples
+                ) -> None:
+        if isinstance(test_data,DataSamples):
+            self._TestData = test_data
+        else:
+            raise TypeError("Only 'DataSamples' objects can be set as 'TestData'.")
+
+    @property
+    def TrainData(self) -> DataSamples:
+        return self._TrainData
+
+    @TrainData.setter
+    def TrainData(self,
+                  train_data: DataSamples
+                 ) -> None:
+        if isinstance(train_data,DataSamples):
+            self._TrainData = train_data
+        else:
+            raise TypeError("Only 'DataSamples' objects can be set as 'TestData'.")
+
+    @property
+    def ValData(self) -> DataSamples:
+        return self._ValData
+
+    @ValData.setter
+    def ValData(self,
+                val_data: DataSamples
+               ) -> None:
+        if isinstance(val_data,DataSamples):
+            self._ValData = val_data
+        else:
+            raise TypeError("Only 'DataSamples' objects can be set as 'TestData'.")
+
     def __define_test_fraction(self) -> None:
         """ 
         """
         self._test_fraction = self._npoints_test/(self._npoints_train+self._npoints_val)
-        self._train_val_range = range(int(round(self.DataMain.InputData._npoints*(1-self.test_fraction))))
-        self._test_range = range(int(round(self.DataMain.InputData._npoints*(1-self.test_fraction))),self.DataMain.InputData._npoints)        
+        self._train_val_range = range(int(round(self.ManagedObject.InputData._npoints*(1-self.test_fraction))))
+        self._test_range = range(int(round(self.ManagedObject.InputData._npoints*(1-self.test_fraction))),self.ManagedObject.InputData._npoints)        
 
     def __check_set_npoints(self,
                         npoints: Optional[List[int]] = None, # list with [n_train, n_val, n_test]
@@ -2037,16 +2094,16 @@ class DataManager(Verbosity):
         if len(npoints) != 3:
             raise InvalidInput("The 'npoints' argument should be a list of three integers of the form [n_train, n_val, n_test].")
         self._npoints_required = np.sum(npoints)
-        self._npoints_available = self.DataMain.InputData._npoints
+        self._npoints_available = self.ManagedObject.InputData._npoints
         if self._npoints_required > self._npoints_available:
             raise InvalidInput("The total requires number of points is larger than the available points (",self._npoints_available,").")
         self._npoints_test = npoints[2]
         self._npoints_train = npoints[0]
         self._npoints_val = npoints[1]
-        self.DataMain._log[utils.generate_timestamp()] = {"action": "set npoints",
-                                                          "npoints train": [self._npoints_train],
-                                                          "npoints val": [self._npoints_train],
-                                                          "npoints test": [self._npoints_val]}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "set npoints",
+                                                               "npoints train": [self._npoints_train],
+                                                               "npoints val": [self._npoints_train],
+                                                               "npoints test": [self._npoints_val]}}
         print(header_string_2,"\nSet the number of required points: train (",self._npoints_train,"); val (",self._npoints_val,"); test (",self._npoints_test,").\n", show = verbose)
 
     def __check_set_preprocessing(self,
@@ -2080,9 +2137,9 @@ class DataManager(Verbosity):
         verbose, _ = self.get_verbosity(verbose)
         print(header_string_2,"\nInitializing TrainData object.\n", show = verbose)
         self._idx_train = np.array([],dtype=np.int_)
-        self.TrainData = DataSamples(dtype = [self.DataMain.InputData.dtype_stored,
-                                            self.DataMain.InputData.dtype_required],
-                                   verbose = False)
+        self.TrainData = DataSamples(dtype = [self.ManagedObject.InputData.dtype_stored,
+                                              self.ManagedObject.InputData.dtype_required],
+                                     verbose = False)
         
     def __init_val_data(self, 
                         verbose: Optional[IntBool] = None
@@ -2090,17 +2147,17 @@ class DataManager(Verbosity):
         verbose, _ = self.get_verbosity(verbose)
         print(header_string_2,"\nInitializing TrainData object.\n", show = verbose)
         self._idx_val = np.array([],dtype=np.int_)
-        self.ValData = DataSamples(dtype = [self.DataMain.InputData.dtype_stored,
-                                          self.DataMain.InputData.dtype_required],
-                                 verbose = False)
+        self.ValData = DataSamples(dtype = [self.ManagedObject.InputData.dtype_stored,
+                                            self.ManagedObject.InputData.dtype_required],
+                                   verbose = False)
         
     def __init_test_data(self, verbose: Optional[IntBool] = None) -> None:
         verbose, verbose_sub = self.get_verbosity(verbose)
         print(header_string_2,"\nInitializing TestData object.\n", show = verbose)
         self._idx_test = np.array([],dtype=np.int_)
-        self.TestData = DataSamples(dtype = [self.DataMain.InputData.dtype_stored,
-                                           self.DataMain.InputData.dtype_required],
-                                  verbose = False)
+        self.TestData = DataSamples(dtype = [self.ManagedObject.InputData.dtype_stored,
+                                             self.ManagedObject.InputData.dtype_required],
+                                    verbose = False)
 
     def compute_sample_weights(self, 
                                data_X: npt.NDArray,
@@ -2175,8 +2232,8 @@ class DataManager(Verbosity):
         verbose, verbose_sub = self.get_verbosity(verbose)
         npoints = len(idx)
         if npoints > 0:
-            data_X = np.array(self.DataMain.InputData._data_X[idx]).astype(self.DataMain.InputData._dtype_required)
-            data_Y = np.array(self.DataMain.InputData._data_Y[idx]).astype(self.DataMain.InputData._dtype_required)
+            data_X = np.array(self.ManagedObject.InputData._data_X[idx]).astype(self.ManagedObject.InputData._dtype_required)
+            data_Y = np.array(self.ManagedObject.InputData._data_Y[idx]).astype(self.ManagedObject.InputData._dtype_required)
             print(header_string_2,"\nLoaded required data from dataset.\n", show = verbose)
         else:
             data_X = np.array([[]],dtype=np.float_)
@@ -2233,8 +2290,8 @@ class DataManager(Verbosity):
         else:
             V = np.identity(len(data_X[0]))
         end = timer()
-        self.DataMain._log[utils.generate_timestamp()] = {"action": "defined covariance rotation matrix",
-                                                          "rotationX_bool": rotationX_bool}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "defined covariance rotation matrix",
+                                                               "rotationX_bool": rotationX_bool}}
         print(header_string_2, "\nMatrix that rotates the correlation matrix defined in",end-start, "s.\n", show = verbose)
         return V
 
@@ -2310,9 +2367,9 @@ class DataManager(Verbosity):
             scalerY = StandardScaler(with_mean=False, with_std=False)
             scalerY.fit(data_Y.reshape(-1, 1))
         end = timer()
-        self.DataMain._log[utils.generate_timestamp()] = {"action": "defined standard scalers",
-                                                          "scaler X": scalerX_bool,
-                                                          "scaler Y": scalerY_bool}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "defined standard scalers",
+                                                               "scaler X": scalerX_bool,
+                                                               "scaler Y": scalerY_bool}}
         print(header_string_2,"\nStandard scalers defined in", end-start, "s.\n", show = verbose)
         return [scalerX, scalerY]
 
@@ -2332,8 +2389,8 @@ class DataManager(Verbosity):
             action = "Generated new test data"
         [self.TestData._data_X, self.TestData._data_Y] = self.define_data(self._idx_test)
         end = timer()
-        self.DataMain._log[utils.generate_timestamp()] = {"action": action,
-                                                          "npoints test": self._npoints_test}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": action,
+                                                               "npoints test": self._npoints_test}}
         print(header_string_2,"\nGenerated/loaded", str(self._npoints_test), "(X_test, Y_test) data in", end-start,"s.\n", show = verbose)
 
     def generate_train_val_data(self, 
@@ -2355,9 +2412,9 @@ class DataManager(Verbosity):
         [self.TrainData._data_X, self.TrainData._data_Y] = self.define_data(self._idx_train)
         [self.ValData._data_X, self.ValData._data_Y] = self.define_data(self._idx_val)
         end = timer()
-        self.DataMain._log[utils.generate_timestamp()] = {"action": action,
-                                                          "npoints train": self._npoints_train,
-                                                          "npoints val": self._npoints_val}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": action,
+                                                               "npoints train": self._npoints_train,
+                                                               "npoints val": self._npoints_val}}
         print(header_string_2,"\nGenerated/loaded", str(self._npoints_train), "(X_train, Y_train) data and ", str(self._npoints_val),"(X_val, Y_val) data in", end-start,"s.\n", show = verbose)
         [self._scalerX, self._scalerY] = self.define_scalers(data_X = self.TrainData._data_X,
                                                              data_Y = self.TrainData._data_Y,
@@ -2408,10 +2465,10 @@ class DataManager(Verbosity):
         self._npoints_test = npoints[2]
         self._npoints_train = npoints[0]
         self._npoints_val = npoints[1]
-        self.DataMain._log[utils.generate_timestamp()] = {"action": "updated npoints",
-                                                          "npoints train [old,new]": [old_train, self._npoints_train],
-                                                          "npoints val [old,new]": [old_val, self._npoints_train],
-                                                          "npoints test [old, new]": [old_test, self._npoints_val]}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "updated npoints",
+                                                               "npoints train [old,new]": [old_train, self._npoints_train],
+                                                               "npoints val [old,new]": [old_val, self._npoints_train],
+                                                               "npoints test [old, new]": [old_test, self._npoints_val]}}
         print(header_string_2,"\nUpdated the number of required points: train (",old_train,"->",self._npoints_train,"); val (",old_val,"->",self._npoints_val,"); test (",old_test,"->",self._npoints_test,").\n", show = verbose)
 
     def update_test_data(self,
@@ -2432,9 +2489,9 @@ class DataManager(Verbosity):
         self.update_npoints(npoints = [self._npoints_train, self._npoints_val, new_npoints_test],
                             verbose = verbose_sub)
         end = timer()
-        self.DataMain._log[utils.generate_timestamp()] = {"action": "updated test data",
-                                                          "npoints train": self._npoints_test,
-                                                          "npoints val": self._npoints_val}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "updated test data",
+                                                               "npoints train": self._npoints_test,
+                                                               "npoints val": self._npoints_val}}
         print(header_string_2,"\nAdded", str(npoints_test), "(X_test, Y_test) data in", end-start,"s.\n", show = verbose)
 
     def update_train_val_data(self,
@@ -2463,9 +2520,9 @@ class DataManager(Verbosity):
         self.update_npoints(npoints = [new_npoints_train, new_npoints_val, self._npoints_test],
                             verbose = verbose_sub)
         end = timer()
-        self.DataMain._log[utils.generate_timestamp()] = {"action": "updated train/val data",
-                                                          "npoints train": self._npoints_train,
-                                                          "npoints val": self._npoints_val}
+        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "updated train/val data",
+                                                               "npoints train": self._npoints_train,
+                                                               "npoints val": self._npoints_val}}
         print(header_string_2,"\nAdded", str(npoints_train), "(X_train, Y_train) data and", str(npoints_val),"(X_val, Y_val) data in", end-start,"s.\n", show = verbose)
 
 

@@ -1,5 +1,5 @@
 {
-    "datetime_2022_12_06_10_55_19_8087":{
+    "datetime_2022_12_07_10_14_02_8091":{
         "action":"set npoints",
         "npoints train":[
             50000
@@ -11,58 +11,58 @@
             30000
         ]
     },
-    "datetime_2022_12_06_10_55_19_8047":{
+    "datetime_2022_12_07_10_14_02_8061":{
         "action":"object created from input arguments"
     },
-    "datetime_2022_12_06_10_55_19_8177":{
+    "datetime_2022_12_07_10_14_02_8191":{
         "action":"saved json",
         "file name":"prova_datamain.json"
     },
-    "datetime_2022_12_06_10_55_19_8347":{
+    "datetime_2022_12_07_10_14_02_8371":{
         "action":"saved h5",
         "file name":"prova_datamain.h5"
     },
-    "datetime_2022_12_06_10_55_19_8377":{
+    "datetime_2022_12_07_10_14_02_8401":{
         "action":"saved json",
         "file name":"prova_datamain_idx.json"
     },
-    "datetime_2022_12_06_10_55_19_8447":{
+    "datetime_2022_12_07_10_14_02_8531":{
         "action":"saved h5",
         "file name":"prova_datamain_idx.h5"
     },
-    "datetime_2022_12_06_10_55_19_8597":{
+    "datetime_2022_12_07_10_14_02_8771":{
         "action":"saved h5",
         "file name":"prova_datamain_preprocessing.h5"
     },
-    "datetime_2022_12_06_10_55_19_8727":{
+    "datetime_2022_12_07_10_14_02_8921":{
         "action":"saved samples h5",
         "file names":[
             "prova_datamain_samples.h5"
         ]
     },
-    "datetime_2022_12_06_10_55_19_8747":{
+    "datetime_2022_12_07_10_14_02_8941":{
         "action":"saved json",
         "file name":"prova_datamain_predictions.json"
     },
-    "datetime_2022_12_06_10_55_19_8797":{
+    "datetime_2022_12_07_10_14_02_9011":{
         "action":"saved h5",
         "file name":"prova_datamain_predictions.h5"
     },
-    "datetime_2022_12_06_10_55_22_2761":{
+    "datetime_2022_12_07_10_14_21_3591":{
         "action":"loaded json",
         "file name":"prova_datamain.log"
     },
-    "datetime_2022_12_06_10_55_22_2861":{
+    "datetime_2022_12_07_10_14_21_3691":{
         "action":"loaded h5",
         "file name":"prova_datamain.h5"
     },
-    "datetime_2022_12_06_10_55_22_2951":{
+    "datetime_2022_12_07_10_14_21_3731":{
         "action":"loaded DataSamples",
         "files names":[
             "prova_datamain_samples.h5"
         ]
     },
-    "datetime_2022_12_06_10_55_22_2961":{
+    "datetime_2022_12_07_10_14_21_3741":{
         "action":"set npoints",
         "npoints train":[
             50000
@@ -74,19 +74,19 @@
             30000
         ]
     },
-    "datetime_2022_12_06_10_55_22_3083":{
+    "datetime_2022_12_07_10_14_21_3821":{
         "action":"loaded h5",
         "file name":"prova_datamain_idx.h5"
     },
-    "datetime_2022_12_06_10_55_22_3203":{
+    "datetime_2022_12_07_10_14_21_3891":{
         "action":"loaded h5",
         "file name":"prova_datamain_preprocessing.h5"
     },
-    "datetime_2022_12_06_10_55_22_3283":{
+    "datetime_2022_12_07_10_14_21_3921":{
         "action":"loaded h5",
         "file name":"prova_datamain_predictions.h5"
     },
-    "datetime_2022_12_06_10_55_22_3313":{
+    "datetime_2022_12_07_10_14_21_3431":{
         "action":"object reconstructed from loaded files"
     }
 }

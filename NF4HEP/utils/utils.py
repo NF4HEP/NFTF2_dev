@@ -65,7 +65,7 @@ def make_pdf_from_img(img):
     pdf = FPDF(unit = "pt", format = (width, height))
     pdf.add_page()
     pdf.image(img, 0, 0)
-    pdf.output(img_pdf, "F")
+    pdf.output(img_pdf, "F") # type: ignore
 
 def chunks(lst, n):
     """Return list of chunks from lst."""
@@ -85,10 +85,15 @@ def savefig(path,**kwargs):
         plt.savefig(path, **kwargs)
 
 def build_method_string_from_dict(class_name=None, method_name=None, args=None, kwargs=None):
-    if class_name is not None:
-        method_string = class_name+"."+method_name+"("
-    else:
-        method_string = method_name+"("
+    if class_name is None:
+        class_name = ""
+    if method_name is None:
+        method_name = ""
+    if args is None:
+        args = []
+    if kwargs is None:
+        kwargs = {}
+    method_string = class_name+"."+method_name+"("
     if args != []:
         for arg in args:
             if type(arg) == str:

@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import weakref
 import codecs
 import pandas as pd # type: ignore
 import sys
@@ -76,7 +77,7 @@ class ObjectManager():
     
     @property
     def ManagedObject(self) -> Any:
-        return self._ManagedObject
+        return self._ManagedObject()
 
     @ManagedObject.setter
     def ManagedObject(self,
@@ -85,7 +86,7 @@ class ObjectManager():
         object_name = self.__class__.__name__
         exec("from NF4HEP import " + self.managed_object_name)
         if isinstance(managed_object,eval(self.managed_object_name)):
-            self._ManagedObject = managed_object
+            self._ManagedObject = weakref.ref(managed_object)
         else:
             raise TypeError(object_name+" object does not support object of type "+str(type(managed_object))+" as managed object.")
 
@@ -154,8 +155,8 @@ class FileManager(ABC,ObjectManager,Verbosity):
         # Initialize object
         print(header_string_1, "\nInitializing FileManager object.\n", show = self.verbose)
         timestamp = utils.generate_timestamp()
-        # Define self._input_file, self._input_folder, self._input_object_h5_file, self._input_log_file
-        input_file = input_file if input_file is None else Path(input_file)
+        # Define self._input_file, self._input_folder, self._input_object_json_file, self._input_log_file
+        input_file = Path(input_file) if input_file is not None else input_file
         self.input_file = input_file
         self.name = name if name is not None else ""
         self.output_folder = output_folder # type: ignore
@@ -171,7 +172,7 @@ class FileManager(ABC,ObjectManager,Verbosity):
     def name(self,
              name: str
             ) -> None:
-        if self.input_object_h5_file is not None:
+        if self.input_object_json_file is not None:
             name = self.__read_name_from_input_file()
         self._name = Name(managed_object_name = self.managed_object_name,
                           name = name)
@@ -189,13 +190,13 @@ class FileManager(ABC,ObjectManager,Verbosity):
         else:
             try:
                 self._input_file = Path(input_file).absolute()
-                if self._input_file.with_suffix(".h5").exists():
+                if self._input_file.with_suffix(".json").exists():
                     if self._input_file.with_suffix(".log").exists():
                         print(header_string_2, "\nInput folder set to\n\t",str(self._input_file.parent), ".\n", show = self._verbose)
                     else:
                         raise InputFileNotFoundError("The file",str(self._input_file.with_suffix(".log")),"has not been found.")
                 else:
-                    raise InputFileNotFoundError("The file",str(self._input_file.with_suffix(".h5")),"has not been found.")
+                    raise InputFileNotFoundError("The file",str(self._input_file.with_suffix(".json")),"has not been found.")
             except:
                 raise Exception("Could not set input files.")
     
@@ -206,10 +207,17 @@ class FileManager(ABC,ObjectManager,Verbosity):
         else:
             return None
 
+    #@property
+    #def input_object_h5_file(self) -> Optional[Path]:
+    #    if self._input_file is not None:
+    #        return self._input_file.with_suffix(".h5")
+    #    else:
+    #        return None
+
     @property
-    def input_object_h5_file(self) -> Optional[Path]:
+    def input_object_json_file(self) -> Optional[Path]:
         if self._input_file is not None:
-            return self._input_file.with_suffix(".h5")
+            return self._input_file.with_suffix(".json")
         else:
             return None
 
@@ -320,9 +328,11 @@ class FileManager(ABC,ObjectManager,Verbosity):
         return [log,dictionary]
 
     def __read_name_from_input_file(self) -> str:
-        if self.input_object_h5_file is not None:
-            input_h5_file = Path(self.input_object_h5_file)
-            name_str: str = str(dd.io.load(input_h5_file,"/_name"))
+        if self.input_object_json_file is not None:
+            input_json_file = Path(self.input_object_json_file)
+            with input_json_file.open() as json_file:
+                name_str: str = str(json.load(json_file)["_name"])
+            #name_str: str = str(dd.io.load(input_h5_file,"/_name"))
             #dictionary = dd.io.load(input_h5_file,"/_name")
             #name_str: str = dictionary["_name"]
             return name_str

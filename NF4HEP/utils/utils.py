@@ -1,6 +1,7 @@
 import itertools
 import numpy as np
 from numpy import typing as npt
+from sklearn import datasets # type: ignore
 
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
@@ -20,11 +21,14 @@ import codecs
 import random
 import json
 import tensorflow as tf # type: ignore
+import tensorflow.compat.v1 as tf1 # type: ignore
+from tensorflow.keras import Input # type: ignore
+from tensorflow.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses # type: ignore
+from tensorflow.keras.models import Model # type: ignore
+from tensorflow.keras.layers import Layer #type: ignore
 import tensorflow_probability as tfp # type: ignore
 tfd = tfp.distributions
 tfb= tfp.bijectors
-from tensorflow.keras.layers import Input # type: ignore
-from tensorflow.keras import Model # type: ignore
 import pandas as pd # type: ignore
 
 from .verbosity import print
@@ -84,7 +88,11 @@ def savefig(path,**kwargs):
     else:
         plt.savefig(path, **kwargs)
 
-def build_method_string_from_dict(class_name=None, method_name=None, args=None, kwargs=None):
+def build_method_string_from_dict(class_name: Optional[str] = None, 
+                                  method_name: Optional[str] = None, 
+                                  args: Optional[list] = None, 
+                                  kwargs: Optional[dict] = None
+                                 ) -> str:
     if class_name is None:
         class_name = ""
     if method_name is None:
@@ -96,7 +104,7 @@ def build_method_string_from_dict(class_name=None, method_name=None, args=None, 
     method_string = class_name+"."+method_name+"("
     if args != []:
         for arg in args:
-            if type(arg) == str:
+            if isinstance(arg,str):
                 if "(" in arg:
                     method_string = method_string+arg+", "
                 else:
@@ -104,7 +112,7 @@ def build_method_string_from_dict(class_name=None, method_name=None, args=None, 
             else:
                 method_string = method_string+str(arg)+", "
     for key, val in kwargs.items():
-        if type(val) != dict:
+        if not isinstance(val,dict):
             if "(" in str(val):
                 if "initializer" in key:
                     val = str(val).lstrip("initializers.")
@@ -164,7 +172,7 @@ def build_method_string_from_dict(class_name=None, method_name=None, args=None, 
                         method_string = method_string+key+"='"+val+"', "
                     else:
                         method_string = method_string+key+"="+val+", "
-            elif type(val) == str:
+            elif isinstance(val,str):
                 try:
                     str_val = str(eval(str(val)))
                 except:
@@ -245,9 +253,9 @@ def convert_types_dict(d):
     for k, v in d.items():
         if isinstance(v, dict):
             dd[k] = convert_types_dict(v)
-        elif type(v) == np.ndarray:
+        elif isinstance(v,np.ndarray):
             dd[k] = v.tolist()
-        elif type(v) == list:
+        elif isinstance(v,list):
             if str in [type(q) for q in flatten_list(v)]:
                 dd[k] = np.array(v, dtype=object).tolist()
             else:
@@ -279,14 +287,14 @@ def product_dict(**kwargs):
 def dic_minus_keys(dictionary: Dict[Any, Any],
                    keys: List[str],
                   ) -> Dict[Any, Any]:
-    if type(keys) == str:
+    if isinstance(keys,str):
         shallow_copy = dict(dictionary)
         try:
             del shallow_copy[keys]
         except:
             pass
         return shallow_copy
-    elif type(keys) == list:
+    elif isinstance(keys,list):
         shallow_copy = dict(dictionary)
         for i in keys:
             try:
@@ -322,6 +330,12 @@ def check_add_suffix(s: str,
         return s
     else:
         return s+suff
+
+def minus_logprob(y_true, y_pred):
+    """
+    Function used as custom loss function
+    """
+    return -y_pred
 
 def strip_prefix(s, pref):
     if s.startswith(pref):
@@ -463,6 +477,7 @@ def compare_objects(obj1,obj2,string="",only_dict=True,excluded_attrs=[],strong_
     verbose_sub = verbose
     if verbose < 0:
         verbose_sub = 0
+    diffs = []
     print("Comparing obejects", string, ".", show = verbose_sub)
     if only_dict:
         dict1=obj1.__dict__
@@ -477,7 +492,14 @@ def compare_dictionaries(dict1,dict2,string="",only_dict=True,excluded_attrs=[],
     verbose_sub = verbose
     if verbose < 0:
         verbose_sub = 0
+    diffs = []
     print("Comparing dictionaries", string, ".", show = verbose_sub)
+    try:
+        if dict1 == dict2:
+            print("-----> OK: ", string, ": Dictionaries are equal.\n", show = verbose)
+            return diffs
+    except:
+        pass
     dict1tmp = dic_minus_keys(dict1,excluded_attrs)
     dict2tmp = dic_minus_keys(dict2,excluded_attrs)
     dict1_removed = list(set(dict1.keys())-set(dict1tmp.keys()))
@@ -503,12 +525,16 @@ def compare_dictionaries(dict1,dict2,string="",only_dict=True,excluded_attrs=[],
                 print("!!!!!> EXCLUDED: ",string_print,"(only present in second dictionary)",": Value is",dict2[k],".\n", show = verbose)
     dict1 = dict1tmp
     dict2 = dict2tmp
-    diffs = []
     def intersection(lst1, lst2): 
         lst3 = [value for value in lst1 if value in lst2] 
         return lst3
-    keys1 = sorted(dict1.keys())#,key=str.lower)
-    keys2 = sorted(dict2.keys())#,key=str.lower)
+    keys1 = dict1.keys()
+    keys2 = dict2.keys()
+    try:
+        keys1 = sorted(keys1)
+        keys2 = sorted(keys2)
+    except:
+        pass
     diff1 = list(set(keys1) - set(keys2))
     diff2 = list(set(keys2) - set(keys2))
     keys = intersection(keys1, keys2)
@@ -574,8 +600,22 @@ def compare_lists_arrays_tuple(list1,list2,string="",only_dict=True,excluded_att
     verbose_sub = verbose
     if verbose < 0:
         verbose_sub = 0
-    print("Comparing list or arrays", string, ".", show = verbose_sub)
     diffs = []
+    print("Comparing list or arrays", string, ".", show = verbose_sub)
+    try:
+        if list1 == list2:
+            print("-----> OK: ", string, ": Lists are equal.\n", show = verbose)
+            return diffs
+    except:
+        pass
+    try:
+        arr1 = np.array(list1, dtype=object)
+        arr2 = np.array(list2, dtype=object)
+        if np.all(np.equal(arr1, arr2)):
+            print("-----> OK: ", string, ": Lists are equal.\n", show = verbose)
+            return diffs
+    except:
+        pass
     if strong_exclusion:
         excluded = False
         new_list1 = []
@@ -611,51 +651,55 @@ def compare_lists_arrays_tuple(list1,list2,string="",only_dict=True,excluded_att
                 new_list2.append(e)
         list1 = new_list1
         list2 = new_list2
-    arequal = False
+    try:
+        if list1 == list2:
+            print("-----> OK: ", string, ": Lists are equal.\n", show = verbose)
+            return diffs
+    except:
+        pass
     try:
         arr1 = np.array(list1, dtype=object)
         arr2 = np.array(list2, dtype=object)
-        arequal = np.all(np.equal(arr1, arr2))
+        if np.all(np.equal(arr1, arr2)):
+            print("-----> OK: ", string, ": Lists are equal.\n", show = verbose)
+            return diffs
     except:
         pass
-    if arequal:
-        print("-----> OK: ", string, ": Lists are equal.\n", show = verbose)
-    if not arequal:
-        if len(list1)!=len(list2):
-            print("=====> DIFFERENCE: ",string,": Lists have different length.\n", show = verbose)
-            diffs.append([string, list1, list2])
-        else:
-            for i in range(len(list1)):
-                prestring = string + " - list entry " + str(i)
-                print("Comparing", prestring, ".", show = verbose_sub)
-                areobjects=False
+    if len(list1)!=len(list2):
+        print("=====> DIFFERENCE: ",string,": Lists have different length.\n", show = verbose)
+        diffs.append([string, list1, list2])
+    else:
+        for i in range(len(list1)):
+            prestring = string + " - list entry " + str(i)
+            print("Comparing", prestring, ".", show = verbose_sub)
+            areobjects=False
+            try:
+                dic_minus_keys(list1[i].__dict__,excluded_attrs)
+                dic_minus_keys(list2[i].__dict__,excluded_attrs)
+                areobjects=True
+            except:
+                pass
+            if areobjects:
+                print("Items", prestring, "are objects.", show = verbose_sub)
+                diffs = diffs + compare_objects(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
+            elif isinstance(list1[i],dict) and isinstance(list2[i],dict):
+                print("Items", prestring, "are dictionaries.", show = verbose_sub)
+                diffs = diffs + compare_dictionaries(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
+            elif isinstance(list1[i],(np.ndarray,list,tuple)) and isinstance(list2[i],(np.ndarray,list,tuple)):
+                print("Items", prestring,
+                      "are lists, numpy arrays, or tuple.", show = verbose_sub)
+                diffs = diffs + compare_lists_arrays_tuple(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
+            else:
                 try:
-                    dic_minus_keys(list1[i].__dict__,excluded_attrs)
-                    dic_minus_keys(list2[i].__dict__,excluded_attrs)
-                    areobjects=True
-                except:
-                    pass
-                if areobjects:
-                    print("Items", prestring, "are objects.", show = verbose_sub)
-                    diffs = diffs + compare_objects(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
-                elif isinstance(list1[i],dict) and isinstance(list2[i],dict):
-                    print("Items", prestring, "are dictionaries.", show = verbose_sub)
-                    diffs = diffs + compare_dictionaries(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
-                elif isinstance(list1[i],(np.ndarray,list,tuple)) and isinstance(list2[i],(np.ndarray,list,tuple)):
-                    print("Items", prestring,
-                          "are lists, numpy arrays, or tuple.", show = verbose_sub)
-                    diffs = diffs + compare_lists_arrays_tuple(list1[i],list2[i],prestring,only_dict=only_dict,excluded_attrs=excluded_attrs,strong_exclusion=strong_exclusion,verbose=verbose)
-                else:
-                    try:
-                        if not list1[i] == list2[i]:
-                            print("=====> DIFFERENCE: ",prestring,": Values are",list1[i],"and",list2[i],".\n", show = verbose)
-                            diffs.append([prestring,list1[i],list2[i]])
-                        else:
-                            print("-----> OK: ", prestring, " Items are equal.\n", show = verbose)
-                    except:
-                        print("xxxxx> FAILED: ", prestring, ": Values could not be compared. Values are",
-                              list1[i], "and", list2[i], ".\n", show = verbose)
+                    if not list1[i] == list2[i]:
+                        print("=====> DIFFERENCE: ",prestring,": Values are",list1[i],"and",list2[i],".\n", show = verbose)
                         diffs.append([prestring,list1[i],list2[i]])
+                    else:
+                        print("-----> OK: ", prestring, " Items are equal.\n", show = verbose)
+                except:
+                    print("xxxxx> FAILED: ", prestring, ": Values could not be compared. Values are",
+                          list1[i], "and", list2[i], ".\n", show = verbose)
+                    diffs.append([prestring,list1[i],list2[i]])
     return diffs
 
 def reset_random_seeds(seed):
@@ -898,3 +942,30 @@ def create_log_file(mother_output_dir,results_dict):
         log_file.write('\n')
         log_file.close()
     return log_file_name
+
+def RandCorr(self,
+             ndims: int,
+             seed: Optional[int] = None,
+            ) -> npt.NDArray:
+    if seed is None:
+        seed = self._seed
+    np.random.seed(seed)
+    V = datasets.make_spd_matrix(ndims,random_state=seed)
+    D = np.sqrt(np.diag(np.diag(V)))
+    Dinv = np.linalg.inv(D)
+    Vnorm = np.matmul(np.matmul(Dinv,V),Dinv)
+    return Vnorm
+    
+def RandCov(self,
+            std: Array,
+            seed: Optional[int] = None,
+           ) -> npt.NDArray:
+    if seed is None:
+        seed = self._seed
+    np.random.seed(seed)
+    std = np.array(std)
+    ndims = len(std)
+    corr = self.RandCorr(ndims,seed)
+    D = np.diag(std)
+    V = np.matmul(np.matmul(D,corr),D)
+    return V

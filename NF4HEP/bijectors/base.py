@@ -29,13 +29,14 @@ header_string_1 = "=============================="
 header_string_2 = "------------------------------"
 
  
-class BaseNetwork(Layer):
+class BaseNetwork(Layer, Verbosity):
     name: str
     """
     Base class for the Normalizing Flow NN.
     """
-    def __init__(self#,
-#                 model_define_inputs: Dict[str, Any]
+    def __init__(self,
+                 model_define_inputs: Dict[str, Any],
+                 verbose: Optional[IntBool] = None
                 ) -> None:
         # Attributes type declarations
         self._batch_norm: StrBool
@@ -45,8 +46,14 @@ class BaseNetwork(Layer):
         self._layers_string: List[str]
         self._model_define_inputs: Dict[str, Any]
         self._ndims: int
+        # Initialise parent Verbosity class
+        Verbosity.__init__(self, verbose)
+        # Set verbosity
+        verbose, _ = self.get_verbosity(verbose)
         # Initialise parent Layer and Verbosity classes
         Layer.__init__(self)
+        self._model_define_inputs = model_define_inputs
+        #Layer.__init__(self)
         # Initialize object
 
     @property
@@ -76,6 +83,15 @@ class BaseNetwork(Layer):
     @property
     def ndims(self) -> int:
         return self._ndims
+
+    def get_config(self):
+        config = Layer.get_config(self)
+        config.update({"model_define_inputs": self.model_define_inputs,
+                       "verbose": self.verbose})
+        return config
+
+    #def from_config(self, config):
+    #    return self(**config)
 
 
 class BaseBijector(tfb.Bijector): # type: ignore

@@ -13,6 +13,7 @@ import codecs
 from email.headerregistry import Group
 import json
 import time
+import weakref
 from datetime import datetime
 from os import path
 from timeit import default_timer as timer
@@ -179,28 +180,26 @@ class DataFileManager(FileManager):
 
     def load_object(self, verbose: Optional[IntBool] = None) -> None:
         verbose, verbose_sub = self.get_verbosity(verbose)
-        if self.input_object_h5_file is not None:
-            log: LogPredDict
-            dictionary: Dict
-            [log, dictionary] = self._FileManager__load_h5(input_h5_file = self.input_object_h5_file, # type: ignore
-                                                           verbose = verbose
-                                                           )
+        if self.input_object_json_file is not None:
+            [log, dictionary] = self._FileManager__load_json(input_json_file = self.input_object_json_file, # type: ignore
+                                                             verbose = verbose
+                                                            )
             # Load log
-            self.ManagedObject._log = {**self.ManagedObject._log, **log}
+            self.ManagedObject.log = log
             # Load DataMain main object attributes
             dict_to_load_main = dictionary["Main"]
             self.ManagedObject.__dict__.update(dict_to_load_main)
             utils.reset_random_seeds(self.ManagedObject.seed)
             # Load arguments and re-build ParsManager object
             dict_to_load_pars_manager = dictionary["ParsManager"]
-            self.ManagedObject.ParsManager = DataParsManager(ndims = int(dict_to_load_pars_manager["_ndims"]),
+            self.ManagedObject.ParsManager = DataParsManager(ndims = dict_to_load_pars_manager["_ndims"],
                                                              pars_central = dict_to_load_pars_manager["_pars_central"],
                                                              pars_bounds = dict_to_load_pars_manager["_pars_bounds"],
                                                              pars_labels = dict_to_load_pars_manager["_pars_labels"],
                                                              pars_pos_nuis = dict_to_load_pars_manager["_pars_pos_nuis"],
                                                              pars_pos_poi = dict_to_load_pars_manager["_pars_pos_poi"],
                                                              verbose = verbose_sub)
-            # Load arguments and re-build DataSamples and DataManager objects
+            # Load arguments and re-build DataSamples and DataManager objectss
             self.load_input_data(verbose = verbose)
             dict_to_load_data_manager: Dict = dictionary["DataManager"]
             self.ManagedObject.DataManager = DataManager(data_main = self.ManagedObject,
@@ -342,10 +341,11 @@ class DataFileManager(FileManager):
         dict_to_save_data_manager["_test_range"] = [self.ManagedObject.DataManager._test_range[0],
                                                     self.ManagedObject.DataManager._test_range[-1]+1]
         dict_to_save = {"_name": self.name, "Main": dict_to_save_main, "ParsManager": dict_to_save_pars_manager, "DataManager":  dict_to_save_data_manager}
-        log = self._FileManager__save_dict_h5_json(dict_to_save = dict_to_save, # type: ignore
-                                                   output_file = self.output_object_h5_file,
-                                                   overwrite = overwrite,
-                                                   verbose = verbose)
+        log = self._FileManager__save_dict_json(dict_to_save = dict_to_save, # type: ignore
+                                                output_file = self.output_object_json_file,
+                                                timestamp = timestamp,
+                                                overwrite = overwrite,
+                                                verbose = verbose)
         self.ManagedObject.log = log
 
     def save_data_idx(self, 
@@ -362,6 +362,7 @@ class DataFileManager(FileManager):
         dict_to_save_idx["_idx_test"] = data_manager_dict["_idx_test"]
         log = self._FileManager__save_dict_h5_json(dict_to_save = dict_to_save_idx, # type: ignore
                                                    output_file = self.output_idx_h5_file,
+                                                   timestamp = timestamp,
                                                    overwrite = overwrite,
                                                    verbose = verbose)
         self.ManagedObject.log = log
@@ -380,6 +381,7 @@ class DataFileManager(FileManager):
         dict_to_save_preprocessing["_rotationX"] = data_manager_dict["_rotationX"]
         log = self._FileManager__save_dict_h5(dict_to_save = dict_to_save_preprocessing, # type: ignore
                                               output_file = self.output_preprocessing_h5_file,
+                                              timestamp = timestamp,
                                               overwrite = overwrite,
                                               verbose = verbose)
         self.ManagedObject.log = log
@@ -724,23 +726,24 @@ class DataMain(Verbosity):
         # Initialize object
         timestamp = utils.generate_timestamp()
         print(header_string_1, "\nInitializing DataMain object.\n", show = verbose)
-        print(header_string_2,"\nSetting FileManager.\n", show = verbose)
         self.FileManager = file_manager # also sets the DataMain managed object FileManager attribute and load_on_RAM DataMain attribute
-        print(header_string_2,"\nSetting Predictions.\n", show = self.verbose)
+        if self.FileManager.input_file is None:
+            self.log = {timestamp: {"action": "DataMain object created from input arguments"}}
+        else:
+            self.log = {timestamp: {"action": "DataMain object reconstructed from loaded files"}}
         self.Predictions = DataPredictionsManager(data_main = self)
-        print(header_string_2,"\nSetting Figures.\n", show = verbose)
         self.Figures = DataFiguresManager(data_main = self)
         if self.FileManager.input_file is None:
-            self.seed = seed if seed is not None else 0
             print(header_string_2,"\nInitializing new DataMain object.\n", show = verbose)
+            self.seed = seed if seed is not None else 0
             if pars_manager is not None:
                 self.ParsManager = pars_manager
             else:
-                raise Exception("When no input file is specified the 'pars_manager' argument needs to be different from 'None'.")
+                raise Exception("When no input file is specified the 'pars_manager' input argument needs to be different from 'None'.")
             if input_data is not None:
                 self.InputData = input_data
             else:
-                raise Exception("When no input file is specified the 'input_data' argument needs to be different from 'None'.")
+                raise Exception("When no input file is specified the 'input_data' input argument needs to be different from 'None'.")
             self.DataManager = DataManager(data_main = self,
                                            npoints = npoints,
                                            preprocessing = preprocessing,
@@ -751,6 +754,7 @@ class DataMain(Verbosity):
             for k,v in {"pars_manager": pars_manager, 
                         "input_data": input_data,
                         "npoints": npoints,
+                        "preprocessing": preprocessing,
                         "seed": seed}.items():
                 if v is not None:
                     print(header_string_2,"\nWARNING: an input file was specified and the argument '",k,"' will be ignored. The related attribute will be set from the input file.\n", show = True)
@@ -760,10 +764,8 @@ class DataMain(Verbosity):
         self.Plotter = DataPlotter(data_main = self)
         print(header_string_2,"\nSetting Plotter.\n", show = verbose)
         if self.FileManager.input_file is None:
-            self.log = {timestamp: {"action": "object created from input arguments"}}
             self.FileManager.save(timestamp = timestamp, overwrite = False, verbose = verbose_sub)
         else:
-            self.log = {timestamp: {"action": "object reconstructed from loaded files"}}
             self.FileManager.save_log(timestamp = timestamp, overwrite = True, verbose = verbose_sub)
 
     @property
@@ -811,8 +813,13 @@ class DataMain(Verbosity):
             self._FileManager
             raise Exception("The 'FileManager' attribute is automatically set when initialising the DataMain object and cannot be manually set.")
         except:
-            self._FileManager = file_manager
-            self._FileManager.ManagedObject = self
+            if isinstance(file_manager, DataFileManager):
+                print(header_string_2,"\nSetting FileManager.\n", show = self.verbose)
+                self._FileManager = file_manager
+                self.log = {utils.generate_timestamp(): {"action": "FileManager object set"}}
+                self._FileManager.ManagedObject = self
+            else:
+                raise Exception("The 'FileManager' attribute should be a 'DataFileManager' object.")
 
     @property
     def load_on_RAM(self) -> bool:
@@ -822,7 +829,9 @@ class DataMain(Verbosity):
     def load_on_RAM(self,
                     load_on_RAM: bool) -> None:
         self._FileManager.load_on_RAM = load_on_RAM
-        self._FileManager.load_input_data(dtype_required = None, verbose = self._verbose)
+        self.log = {utils.generate_timestamp(): {"load_on_RAM": "load_on_RAM set",
+                                                 "value": load_on_RAM}}
+        self._FileManager.load_input_data(dtype_required = None, verbose = self.verbose)
 
     @property
     def name(self) -> str:
@@ -836,7 +845,12 @@ class DataMain(Verbosity):
     def Predictions(self,
                     predictions: "DataPredictionsManager"
                    ) -> None:
-        self._Predictions = predictions
+        if isinstance(predictions,DataPredictionsManager):
+            print(header_string_2,"\nSetting Predictions.\n", show = self.verbose)
+            self._Predictions = predictions
+            self.log = {utils.generate_timestamp(): {"action": "Predictions object set"}}
+        else:
+            print("WARNING: The 'Predictions' attribute should be a 'DataPredictionsManager' object. Nothing was set.", show = True)
 
     @property
     def Figures(self) -> "DataFiguresManager":
@@ -846,7 +860,12 @@ class DataMain(Verbosity):
     def Figures(self,
                 figures: "DataFiguresManager"
                ) -> None:
-        self._Figures = figures
+        if isinstance(figures,DataFiguresManager):
+            print(header_string_2,"\nSetting Figures.\n", show = self.verbose)
+            self._Figures = figures
+            self.log = {utils.generate_timestamp(): {"action": "Figures object set"}}
+        else:
+            print("WARNING: The 'Figures' attribute should be a 'DataFiguresManager' object. Nothing was set.")
 
     @property
     def ParsManager(self) -> DataParsManager:
@@ -860,8 +879,13 @@ class DataMain(Verbosity):
             self._ParsManager
             raise Exception("The 'ParsManager' attribute is automatically set when initialising the DataMain object and cannot be manually set.")
         except:
-            self._ParsManager = pars_manager
-        print(header_string_2,"\nSetting ParsManager.\n", show = self._verbose)
+            if isinstance(pars_manager,DataParsManager):
+                print(header_string_2,"\nSetting ParsManager.\n", show = self.verbose)
+                self._ParsManager = pars_manager
+                self.log = {utils.generate_timestamp(): {"action": "ParsManager object set"}}
+            else:
+                raise Exception("The 'ParsManager' attribute should be a 'DataParsManager' object.")
+        
 
     @property
     def InputData(self) -> DataSamples:
@@ -875,8 +899,13 @@ class DataMain(Verbosity):
             self._InputData
             raise Exception("The 'InputData' attribute is automatically set when initialising the DataMain object and cannot be manually set.")
         except:
-            self._InputData = input_data
-        print(header_string_2,"\nSetting DataSamples.\n", show = self.verbose)
+            if isinstance(input_data,DataSamples):
+                print(header_string_2,"\nSetting DataSamples.\n", show = self.verbose)
+                self._InputData = input_data
+                self.log = {utils.generate_timestamp(): {"action": "InputData object set"}}
+            else:
+                raise Exception("The 'InputData' attribute should be a 'DataSamples' object.")
+        
 
     @property
     def DataManager(self) -> "DataManager":
@@ -890,8 +919,12 @@ class DataMain(Verbosity):
             self._DataManager
             raise Exception("The 'DataManager' attribute is automatically set when initialising the DataMain object and cannot be manually set.")
         except:
-            self._DataManager = data_manager
-        print(header_string_2,"\nSetting DataManager.\n", show = self.verbose)
+            if isinstance(data_manager,DataManager):
+                print(header_string_2,"\nSetting DataManager.\n", show = self.verbose)
+                self._DataManager = data_manager
+                self.log = {utils.generate_timestamp(): {"action": "DataManager object set"}}
+            else:
+                raise Exception("The 'DataManager' attribute should be a 'DataManager' object.")
 
     @property
     def Inference(self) -> "DataInference":
@@ -905,8 +938,12 @@ class DataMain(Verbosity):
             self._Inference
             raise Exception("The 'Inference' attribute is automatically set when initialising the DataMain object and cannot be manually set.")
         except:
-            self._Inference = inference
-        print(header_string_2,"\nSetting Inference.\n", show = self.verbose)
+            if isinstance(inference,DataInference):
+                print(header_string_2,"\nSetting Inference.\n", show = self.verbose)
+                self._Inference = inference
+                self.log = {utils.generate_timestamp(): {"action": "Inference object set"}}
+            else:
+                raise Exception("The 'Inference' attribute should be a 'DataInference' object.")
 
     @property
     def Plotter(self) -> "DataPlotter":
@@ -920,8 +957,12 @@ class DataMain(Verbosity):
             self._Plotter
             raise Exception("The 'Inference' attribute is automatically set when initialising the DataMain object and cannot be manually set.")
         except:
-            self._Plotter = plotter
-        print(header_string_2,"\nSetting Plotter.\n", show = self.verbose)
+            if isinstance(plotter,DataPlotter):
+                print(header_string_2,"\nSetting Plotter.\n", show = self.verbose)
+                self._Plotter = plotter
+                self.log = {utils.generate_timestamp(): {"action": "Plotter object set"}}
+            else:
+                raise Exception("The 'Plotter' attribute should be a 'DataPlotter' object.")
 
     @property
     def seed(self) -> int:
@@ -931,8 +972,11 @@ class DataMain(Verbosity):
     def seed(self,
              seed: int
             ) -> None:
+        print(header_string_2,"\nSetting seed to",str(seed),".\n", show = self.verbose)
         self._seed = seed
         utils.reset_random_seeds(self._seed)
+        self.log = {utils.generate_timestamp(): {"action": "seed reset",
+                                                 "value": seed}}
 
     #def update_figures(self,figure_file=None,timestamp=None,overwrite=False,verbose=None):
     #    """
@@ -2080,9 +2124,9 @@ class DataManager(ObjectManager,Verbosity):
     def __define_test_fraction(self) -> None:
         """ 
         """
-        self._test_fraction = self._npoints_test/(self._npoints_train+self._npoints_val)
-        self._train_val_range = range(int(round(self.ManagedObject.InputData._npoints*(1-self.test_fraction))))
-        self._test_range = range(int(round(self.ManagedObject.InputData._npoints*(1-self.test_fraction))),self.ManagedObject.InputData._npoints)        
+        self._test_fraction = self.npoints_test/(self.npoints_required)
+        self._train_val_range = range(int(round(self.ManagedObject.InputData.npoints*(1-self.test_fraction))))
+        self._test_range = range(int(round(self.ManagedObject.InputData.npoints*(1-self.test_fraction))),self.ManagedObject.InputData.npoints)        
 
     def __check_set_npoints(self,
                         npoints: Optional[List[int]] = None, # list with [n_train, n_val, n_test]
@@ -2095,16 +2139,16 @@ class DataManager(ObjectManager,Verbosity):
             raise InvalidInput("The 'npoints' argument should be a list of three integers of the form [n_train, n_val, n_test].")
         self._npoints_required = np.sum(npoints)
         self._npoints_available = self.ManagedObject.InputData._npoints
-        if self._npoints_required > self._npoints_available:
+        if self.npoints_required > self.npoints_available:
             raise InvalidInput("The total requires number of points is larger than the available points (",self._npoints_available,").")
         self._npoints_test = npoints[2]
         self._npoints_train = npoints[0]
         self._npoints_val = npoints[1]
         self.ManagedObject.log = {utils.generate_timestamp(): {"action": "set npoints",
-                                                               "npoints train": [self._npoints_train],
-                                                               "npoints val": [self._npoints_train],
-                                                               "npoints test": [self._npoints_val]}}
-        print(header_string_2,"\nSet the number of required points: train (",self._npoints_train,"); val (",self._npoints_val,"); test (",self._npoints_test,").\n", show = verbose)
+                                                               "npoints train": [self.npoints_train],
+                                                               "npoints val": [self.npoints_train],
+                                                               "npoints test": [self.npoints_val]}}
+        print(header_string_2,"\nSet the number of required points: train (",self.npoints_train,"); val (",self.npoints_val,"); test (",self.npoints_test,").\n", show = verbose)
 
     def __check_set_preprocessing(self,
                                   preprocessing: Optional[List[bool]] = None, # list with [scalerX_bool, scalerY_bool, rotationX_bool]
@@ -2427,19 +2471,21 @@ class DataManager(ObjectManager,Verbosity):
 
     def inverse_transform_data_X(self, 
                                  data_X: npt.NDArray,
-                                 rotation_X: npt.NDArray,
-                                 scaler_X: StandardScaler
+                                 rotation_X: Optional[npt.NDArray] = None,
+                                 scaler_X: Optional[StandardScaler] = None
                                 ) -> npt.NDArray:
         """
         Inverse of the method
         :meth:`Data.transform_data_X <NF4HEP.Data.transform_data_X>`.
         """
-        return np.dot(scaler_X.inverse_transform(data_X), np.transpose(rotation_X))
+        rotationX = rotation_X if rotation_X is not None else self.rotationX
+        scalerX = scaler_X if scaler_X is not None else self.scalerX
+        return np.dot(scalerX.inverse_transform(data_X), np.transpose(rotationX))
 
     def transform_data_X(self, 
                          data_X: npt.NDArray,
-                         rotation_X: npt.NDArray,
-                         scaler_X: StandardScaler
+                         rotation_X: Optional[npt.NDArray] = None,
+                         scaler_X: Optional[StandardScaler] = None
                         ) -> npt.NDArray:
         """
         Method that transforms X data applying first the rotation 
@@ -2447,7 +2493,9 @@ class DataManager(ObjectManager,Verbosity):
         and then the transformation with scalerX
         :attr:`NF.scalerX <NF4HEP.NF.scalerX>` .
         """
-        return np.array(scaler_X.transform(np.dot(data_X, rotation_X)))
+        rotationX = rotation_X if rotation_X is not None else self.rotationX
+        scalerX = scaler_X if scaler_X is not None else self.scalerX
+        return np.array(scalerX.transform(np.dot(data_X, rotationX)))
 
     def update_npoints(self,
                        npoints: List[int], # list with [n_train, n_val, n_test]

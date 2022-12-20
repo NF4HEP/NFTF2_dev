@@ -110,14 +110,14 @@
         "_scalerX_bool":true,
         "_scalerY_bool":false,
         "_rotationX_bool":true,
-        "_test_fraction":0.25,
+        "_test_fraction":0.2,
         "_seed":0,
         "_train_val_range":[
             0,
-            75000
+            80000
         ],
         "_test_range":[
-            75000,
+            80000,
             100000
         ]
     }

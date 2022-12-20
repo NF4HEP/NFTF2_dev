@@ -9,7 +9,7 @@ import tensorflow as tf # type: ignore
 import tensorflow.compat.v1 as tf1 # type: ignore
 from tensorflow.keras import Input # type: ignore
 from tensorflow.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses # type: ignore
-from tensorflow.keras.models import Model # type: ignore
+from tensorflow.keras.models import Model as ModelTFKeras # type: ignore
 from tensorflow.keras.layers import Layer #type: ignore
 import tensorflow_probability as tfp # type: ignore
 tfd = tfp.distributions
@@ -28,7 +28,7 @@ header_string_2 = "------------------------------"
 # Singleton object representing "no value", in cases where "None" is meaningful.
 UNSPECIFIED = object()
 
-class RealNVPNetwork(BaseNetwork, Verbosity):
+class RealNVPNetwork(BaseNetwork):
     name: "RealNVPNetwork"
     # """
     # """
@@ -131,37 +131,35 @@ class RealNVPNetwork(BaseNetwork, Verbosity):
         self._ndims: int
         # Attributes type declarations
         #
-        # Initialise parent Verbosity class
-        Verbosity.__init__(self, verbose)
+        # Initialise parent BaseNetwork class
+        super().__init__(model_define_inputs = model_define_inputs,
+                         verbose = verbose)
         # Set verbosity
         verbose, _ = self.get_verbosity(verbose)
         # Set inputs and initialise parent BaseNetwork class
         print(header_string_1, "\nInitializing RealNVPNetwork object.\n", show = verbose)
-        self.__set_model_define_inputs(model_define_inputs = model_define_inputs, verbose = verbose)
-        super().__init__()
+        self.__set_model_define_inputs(verbose = verbose)
         # Initialize object
         self.__set_layers()
 
     def __set_model_define_inputs(self,
-                                  model_define_inputs: Dict[str, Any],
                                   verbose: Optional[IntBool] = None
                                  ) -> None:
         verbose, verbose_sub = self.get_verbosity(verbose)
         try:
-            self._ndims = model_define_inputs["ndims"]
+            self._ndims = self.model_define_inputs["ndims"]
         except:
             raise KeyError("The 'model_define_inputs' argument misses the mandatory 'ndims' item.")
         try:
-            self._hidden_layers = model_define_inputs["hidden_layers"]
+            self._hidden_layers = self.model_define_inputs["hidden_layers"]
         except:
             raise KeyError("The 'model_define_inputs' argument misses the mandatory 'hidden_layers' item.")
-        utils.check_set_dict_keys(dic = model_define_inputs, 
+        utils.check_set_dict_keys(dic = self._model_define_inputs, 
                                   keys = ["ndims","hidden_layers","dropout_rate","batch_norm"],
                                   vals = [self._ndims, self._hidden_layers, 0, False],
                                   verbose = verbose_sub)
-        self._dropout_rate = model_define_inputs["dropout_rate"]
-        self._batch_norm = model_define_inputs["batch_norm"]
-        self._model_define_inputs = model_define_inputs
+        self._dropout_rate = self.model_define_inputs["dropout_rate"]
+        self._batch_norm = self.model_define_inputs["batch_norm"]
 
     def __set_layers(self,
                      verbose: Optional[IntBool] = None
@@ -225,12 +223,12 @@ class RealNVPNetwork(BaseNetwork, Verbosity):
             self._batch_norm = "custom"
         layer_string = ""
         for layer in self._hidden_layers:
-            if type(layer) == str:
+            if isinstance(layer,str):
                 if "(" in layer:
                     layer_string = "layers."+layer
                 else:
                     layer_string = "layers."+layer+"()"
-            elif type(layer) == dict:
+            elif isinstance(layer,dict):
                 try:
                     name = layer["name"]
                 except:
@@ -244,7 +242,7 @@ class RealNVPNetwork(BaseNetwork, Verbosity):
                 except:
                     kwargs = {}
                 layer_string = utils.build_method_string_from_dict("layers", name, args, kwargs)
-            elif type(layer) == list:
+            elif isinstance(layer,list):
                 units = layer[0]
                 activation = layer[1]
                 try:
@@ -297,8 +295,8 @@ class RealNVPNetwork(BaseNetwork, Verbosity):
             if self._batch_norm == True and "dense" in layer_string.lower():
                 self._layers_string.append("layers.BatchNormalization()")
                 print("Added hidden layer: layers.BatchNormalization()", show = verbose)
-        t_layer_string = "layers.Dense(self._ndims, name='t')"
-        log_s_layer_string = "layers.Dense(self._ndims, activation='tanh', name='log_s')"
+        t_layer_string = "layers.Dense("+str(self.ndims)+", name='t')"
+        log_s_layer_string = "layers.Dense("+str(self.ndims)+", activation='tanh', name='log_s')"
         self._layers_string.append(t_layer_string)
         self._layers_string.append(log_s_layer_string)
         for layer_string in self._layers_string:
@@ -330,7 +328,7 @@ class RealNVPBijector(BaseBijector, Verbosity):
                  verbose: Optional[IntBool] = None
                 ) -> None:
         # Attributes type declarations (from parent FileManager class)
-        self._Model: Model
+        self._Model: ModelTFKeras
         self._model_bijector_inputs: Dict[str, Any]
         self._ndims: int
         self._NN: RealNVPNetwork
@@ -343,10 +341,20 @@ class RealNVPBijector(BaseBijector, Verbosity):
         verbose, _ = self.get_verbosity(verbose)
         # Set inputs and initialise parent BaseBijector class
         print(header_string_1, "\nInitializing RealNVPBijector object.\n", show = verbose)
+        try:
+            self._ndims = model_define_inputs["ndims"]
+        except:
+            raise KeyError("The 'model_define_inputs' argument misses the mandatory 'ndims' item.")
         self.__set_model_bijector_inputs(model_bijector_inputs = model_bijector_inputs, verbose = verbose)
-        nn = RealNVPNetwork(model_define_inputs)
-        super().__init__(nn = nn, model_bijector_inputs = self._bijector_kwargs)
+        model_define_inputs_NN = dict(model_define_inputs)
+        model_define_inputs_NN["ndims"] = self._tran_ndims
+        self.NN = RealNVPNetwork(model_define_inputs_NN)
+        BaseBijector.__init__(self, nn = self.NN, model_bijector_inputs = self._bijector_kwargs)
         # Initialize object
+
+    @property
+    def ndims(self) -> int:
+        return self._ndims
 
     @property
     def NN(self) -> RealNVPNetwork:
@@ -357,10 +365,13 @@ class RealNVPBijector(BaseBijector, Verbosity):
            nn: RealNVPNetwork
           ) -> None:
         self._NN = nn
-        self._ndims = self._NN._ndims
-        x = Input((self._rem_dims,))
+        x = Input((self.rem_dims,))
         t, log_s = self._NN(x)
-        self._Model = Model(x, [t, log_s])
+        self._Model = ModelTFKeras(x, [t, log_s])
+
+    @property
+    def Model(self) -> ModelTFKeras:
+        return self._Model
 
     @property
     def rem_dims(self) -> int:
@@ -374,6 +385,7 @@ class RealNVPBijector(BaseBijector, Verbosity):
                                     model_bijector_inputs: Dict[str, Any],
                                     verbose: Optional[IntBool] = None
                                    ) -> None:
+        UNSPECIFIED = object()
         verbose, verbose_sub = self.get_verbosity(verbose)
         try:
             self._rem_dims = model_bijector_inputs["rem_dims"]
@@ -443,3 +455,105 @@ class RealNVPBijector(BaseBijector, Verbosity):
         y_a = y[:, :self._tran_ndims]
         y_b = y[:, self._tran_ndims:]
         return self._bijector_fn(y_b).inverse_log_det_jacobian(y_a, event_ndims=1)
+
+
+class RealNVPChain(tfb.Chain, Verbosity): # type: ignore
+    """
+    model_chain_inputs can be of the following form:
+    .. code-block:: python
+
+        model_chain_inputs = {"nbijectors": 2,
+                              "batch_normalization": False}
+    """
+    def __init__(self,
+                 model_define_inputs: Dict[str, Any],
+                 model_bijector_inputs: Dict[str, Any],
+                 model_chain_inputs: Optional[Dict[str, Any]] = None,
+                 verbose: Optional[IntBool] = None
+                ) -> None:
+        # Attributes type declarations
+        self._batch_normalization: bool
+        self._Bijectors: List[RealNVPBijector]
+        self._model_define_inputs: Dict[str, Any]
+        self._model_bijector_inputs: Dict[str, Any]
+        self._model_chain_inputs: Dict[str, Any]
+        self._nbijectors: int
+        self._ndims: int
+        # Initialise parent Verbosity class
+        Verbosity.__init__(self, verbose)
+        # Set verbosity
+        verbose, _ = self.get_verbosity(verbose)
+        # Initialize object
+        print(header_string_1, "\nInitializing NFChain object.\n", show = verbose)
+        self.__set_model_chain_inputs(model_chain_inputs = model_chain_inputs, verbose = verbose)
+        try:
+            self._ndims = model_define_inputs["ndims"]
+        except:
+            raise KeyError("The 'model_define_inputs' argument misses the mandatory 'ndims' item.")
+        name = ""
+        permutation = tf.cast(np.concatenate((np.arange(int(self.ndims/2), self.ndims), np.arange(0, int(self.ndims/2)))), tf.int32)
+        self._Bijectors = []
+        for _ in range(self.nbijectors):
+            bijector = RealNVPBijector(model_define_inputs = model_define_inputs,
+                                       model_bijector_inputs = model_bijector_inputs,
+                                       verbose = True)
+            try:
+                if name == "":
+                    name = str(bijector.name.replace("Bijector","Chain"))
+                self._model_define_inputs # type: ignore
+                self._model_bijector_inputs # type: ignore
+            except:
+                name = str(bijector.name.replace("Bijector","Chain"))
+                self._model_define_inputs = bijector.NN.model_define_inputs
+                self._model_bijector_inputs = bijector.model_bijector_inputs
+            permute = tfb.Permute(permutation = permutation)
+            if self._batch_normalization:
+                self._Bijectors.append(tfb.BatchNormalization())
+            self._Bijectors.append(bijector)
+            self._Bijectors.append(permute)
+        tfb.Chain.__init__(self, bijectors=list(reversed(self._Bijectors[:-1])), name = name)
+
+    @property
+    def batch_normalization(self) -> bool:
+        return self._batch_normalization
+
+    @property
+    def Bijectors(self) -> List[RealNVPBijector]:
+        return self._Bijectors
+
+    @property
+    def model_define_inputs(self) -> Dict[str, Any]:
+        return self._model_define_inputs
+
+    @property
+    def model_bijector_inputs(self) -> Dict[str, Any]:
+        return self._model_bijector_inputs
+
+    @property
+    def model_chain_inputs(self) -> Dict[str, Any]:
+        return self._model_chain_inputs
+
+    @property
+    def nbijectors(self) -> int:
+        return self._nbijectors
+
+    @property
+    def ndims(self) -> int:
+        return self._ndims
+
+    def __set_model_chain_inputs(self,
+                                 model_chain_inputs: Optional[Dict[str, Any]] = None,
+                                 verbose: Optional[IntBool] = None
+                                ) -> None:
+        self._model_chain_inputs = model_chain_inputs if model_chain_inputs is not None else {}
+        try:
+            self._nbijectors = self._model_chain_inputs["nbijectors"]
+        except:
+            print("WARNING: The 'model_chain_inputs' argument misses the mandatory 'nbijectors' item. The corresponding attribute will be set to a default of 2.")
+            self._nbijectors = 2
+        utils.check_set_dict_keys(dic = self._model_chain_inputs, 
+                                  keys = ["nbijectors","batch_normalization"],
+                                  vals = [2,False],
+                                  verbose = verbose)
+        self._batch_normalization = self._model_chain_inputs["batch_normalization"]
+        

@@ -3,6 +3,7 @@ from os import path
 
 sys.dont_write_bytecode = True
 
+from . import utils
 from . import base
 from . import rqs
 from . import arqspline

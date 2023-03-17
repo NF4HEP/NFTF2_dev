@@ -12,10 +12,8 @@ from tensorflow.python.keras import layers, initializers, regularizers, constrai
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Layer
 import tensorflow_probability as tfp #
-from tensorflow_probability.python.bijectors import Bijector
+from tensorflow_probability.python.bijectors import Bijector, Chain, Shift, Scale, Permute, BatchNormalization
 from tensorflow_probability.python.internal import tensorshape_util
-tfd = tfp.distributions
-tfb = tfp.bijectors
 
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
@@ -205,6 +203,22 @@ class RealNVPBijector(BaseBijector):
                 self._reverse_mask = self._fraction_masked < 0
             else:
                 raise ValueError('Exactly one of `num_masked` and `fraction_masked` should be specified.')
+            if shift_and_log_scale_fn:
+                def _bijector_fn(x0, input_depth, **condition_kwargs):
+                    shift, log_scale = shift_and_log_scale_fn(x0, input_depth, **condition_kwargs)
+                      
+                    bijectors = []
+                    if shift is not None:
+                        bijectors.append(Shift(shift))
+                    if log_scale is not None:
+                        bijectors.append(Scale(log_scale=log_scale))
+                    return Chain(bijectors, validate_event_size=False)
+                bijector_fn = _bijector_fn
+            if validate_args:
+                bijector_fn = _validate_bijector_fn(bijector_fn)
+            # Still do this assignment for variable tracking.
+            self._shift_and_log_scale_fn = shift_and_log_scale_fn
+            self._bijector_fn = bijector_fn
 
     @property
     def input_depth(self) -> Optional[int]:
@@ -287,7 +301,7 @@ class RealNVPBijector(BaseBijector):
         return self.bijector_fn(y0, self._bijector_input_units, **condition_kwargs).inverse_log_det_jacobian(y1, event_ndims=1)
 
 
-class RealNVPChain(BaseChain): # type: ignore
+class RealNVPChain(BaseChain):
     """
     will have to check is dedicated chain objects are necessary or not
     """
@@ -317,5 +331,4 @@ class RealNVPChain(BaseChain): # type: ignore
                          batch_normalization = batch_normalization,
                          network_kwargs = network_kwargs,
                          bijector_kwargs = bijector_kwargs,
-                         verbose = verbose
-                        )
+                         verbose = verbose)

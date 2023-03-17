@@ -5,8 +5,8 @@ __all__ = ["MAFNetwork",
            "MAFChain"]
 
 import numpy as np
-import tensorflow as tf
-# import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v1 as tf1
+import tensorflow.compat.v2 as tf
 from tensorflow.python.keras import Input
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.layers import Layer, Dense
@@ -14,8 +14,9 @@ from tensorflow.python.keras.initializers.initializers_v2 import Initializer
 from tensorflow.python.keras.regularizers import Regularizer
 from tensorflow.python.keras.constraints import Constraint
 import tensorflow_probability as tfp
-tfd = tfp.distributions
-tfb = tfp.bijectors
+from tensorflow_probability.python.bijectors import Bijector, Chain, Shift, Scale, Permute, BatchNormalization
+from tensorflow_probability.python.internal import prefer_static as ps
+from tensorflow_probability.python.internal import tensorshape_util
 
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
@@ -208,63 +209,107 @@ class MAFBijector(BaseBijector):
     """
     """
     def __init__(self,
-                 model_define_inputs: Dict[str, Any],
-                 model_bijector_inputs: Dict[str, Any],
+                 shift_and_log_scale_fn: Optional[Callable] = None,
+                 bijector_fn: Optional[Callable] = None,
+                 is_constant_jacobian: bool = False,
+                 validate_args: bool = False,
+                 unroll_loop: bool = False,
+                 event_ndims: int = 1,
                  verbose: Optional[IntBool] = None
                 ) -> None:
         # Attributes type declarations (from parent BaseBijector class)
-        self._Model: Model
-        self._model_bijector_inputs: Dict[str, Any]
-        self._ndims: int
-        self._NN: MAFNetwork
+        self._shift_and_log_scale_fn: Optional[Callable]
+        self._bijector_fn: Optional[Callable]
+        self._is_constant_jacobian: bool
+        self._validate_args: bool
+        self._event_ndims: int
         # Attributes type declarations
-        self._rem_dims: int
-        self._tran_ndims: int
-        # Initialise parent Verbosity class
-        Verbosity.__init__(self, verbose)
+        self._unroll_loop: bool
+        # Initialise parent BaseBijector class
+        super().__init__(shift_and_log_scale_fn = shift_and_log_scale_fn,
+                         bijector_fn = bijector_fn,
+                         is_constant_jacobian = is_constant_jacobian,
+                         validate_args = validate_args,
+                         event_ndims = event_ndims,
+                         verbose = verbose)
         # Set verbosity
         verbose, _ = self.get_verbosity(verbose)
-        # Set inputs and initialise parent BaseBijector class
-        print(header_string_1, "\nInitializing MAFBijector object.\n", show = verbose)
-        self.__set_model_bijector_inputs(model_bijector_inputs = model_bijector_inputs, verbose = verbose)
-        nn = MAFNetwork(model_define_inputs)
-        super().__init__(nn = nn, model_bijector_inputs = self._bijector_kwargs)
         # Initialize object
+        print(header_string_1, "\nInitializing MAFBijector object.\n", show = verbose)
+        with tf.name_scope(self.__name__) as name:
+            # At construction time, we don't know input_depth.
+            self._unroll_loop = unroll_loop
+            if shift_and_log_scale_fn:
+                def _bijector_fn(x, **condition_kwargs):
+                    params = shift_and_log_scale_fn(x, **condition_kwargs)
+                    if tf.is_tensor(params):
+                        shift, log_scale = tf.unstack(params, num=2, axis=-1)
+                    else:
+                        shift, log_scale = params
 
+                    bijectors = []
+                    if shift is not None:
+                        bijectors.append(Shift(shift))
+                    if log_scale is not None:
+                        bijectors.append(Scale(log_scale=log_scale))
+                    return Chain(bijectors, validate_event_size=False)
+
+                bijector_fn = _bijector_fn
+
+            if validate_args:
+                bijector_fn = _validate_bijector_fn(bijector_fn)
+            # Still do this assignment for variable tracking.
+            self._shift_and_log_scale_fn = shift_and_log_scale_fn
+            self._bijector_fn = bijector_fn
+            
     @property
-    def NN(self) -> MAFNetwork:
-        return self._NN
-
-    @NN.setter
-    def NN(self,
-           nn: MAFNetwork
-          ) -> None:
-        self._NN = nn
-        self._ndims = self._NN._ndims
-        self._Model = None
-
-    def __set_model_bijector_inputs(self,
-                                    model_bijector_inputs: Dict[str, Any],
-                                    verbose: Optional[IntBool] = None
-                                   ) -> None:
-        verbose, verbose_sub = self.get_verbosity(verbose)
-
-    def _bijector_fn(self, x):
-        pass
-
-    def _forward(self, x):
-        pass
-
-    def _inverse(self, y):
-        pass
-
-    def _forward_log_det_jacobian(self, x):
-        pass
-
-    def _inverse_log_det_jacobian(self, y):
-        pass
+    def unroll_loop(self) -> bool:
+        return self._unroll_loop
     
-class MAFChain(BaseChain): # type: ignore
+    def _forward(self, x, **kwargs):
+        static_event_size = tensorshape_util.num_elements(tensorshape_util.with_rank_at_least(x.shape, self._event_ndims)[-self._event_ndims:])
+
+        if self._unroll_loop:
+            if not static_event_size:
+                raise ValueError('The final {} dimensions of `x` must be known at graph '
+                'construction time if `unroll_loop=True`. `x.shape: {!r}`'.format(self._event_ndims, x.shape))
+            y = tf.zeros_like(x, name='y0')
+
+            for _ in range(static_event_size):
+                y = self.bijector_fn(y, **kwargs).forward(x)
+            return y
+
+        event_size = ps.reduce_prod(ps.shape(x)[-self._event_ndims:])
+        y0 = tf.zeros_like(x, name='y0')
+        # call the template once to ensure creation
+        if not tf.executing_eagerly():
+            _ = self.bijector_fn(y0, **kwargs).forward(y0)
+        def _loop_body(y0):
+            """While-loop body for autoregression calculation."""
+            # Set caching device to avoid re-getting the tf.Variable for every while
+            # loop iteration.
+            with tf1.variable_scope(tf1.get_variable_scope()) as vs:
+              if vs.caching_device is None and not tf.executing_eagerly():
+                vs.set_caching_device(lambda op: op.device)
+              bijector = self.bijector_fn(y0, **kwargs)
+            y = bijector.forward(x)
+            return (y,)
+        (y,) = tf.while_loop(
+            cond=lambda _: True,
+            body=_loop_body,
+            loop_vars=(y0,),
+            maximum_iterations=event_size)
+        return y
+
+    def _inverse(self, y, **kwargs):
+        bijector = self.bijector_fn(y, **kwargs)
+        return bijector.inverse(y)
+
+    def _inverse_log_det_jacobian(self, y, **kwargs):
+        return self.bijector_fn(y, **kwargs).inverse_log_det_jacobian(y, event_ndims=self._event_ndims)    
+    
+    
+class MAFChain(BaseChain):
     """
     will have to check is dedicated chain objects are necessary or not
     """
@@ -294,79 +339,4 @@ class MAFChain(BaseChain): # type: ignore
                          batch_normalization = batch_normalization,
                          network_kwargs = network_kwargs,
                          bijector_kwargs = bijector_kwargs,
-                         verbose = verbose
-                        )
-
-#class MAFNetwork_default(AbstractNeuralNetwork):
-#    """
-#    Defines the default MAF NN.
-#    """
-#    def __init__(self,
-#                 model_define_inputs,
-#                 verbose=True):
-#        print("Initializing the MAF default NN.")
-#        super().__init__(model_define_inputs,
-#                         verbose)
-#        verbose, verbose_sub = self.get_verbosity(verbose)
-#        self._model_defint_inputs : Dict
-#
-#    def define_network(self, verbose=None):
-#        pass
-#
-#
-#class MAFNetwork_custom(AbstractNeuralNetwork):
-#    """
-#    Defines a custom MAF NN.
-#    """
-#    def __init__(self,
-#                 model_define_inputs,
-#                 verbose=True):
-#        print("Initializing the MAF custom NN.")
-#        super().__init__(model_define_inputs,
-#                         verbose)
-#        verbose, verbose_sub = self.get_verbosity(verbose)
-#        self._model_defint_inputs : Dict
-#
-#    def define_network(self, verbose=None):
-#        pass
-#
-#
-#class MAFBijector_default(AbstractBijector):
-#    """
-#    """
-#    def __init__(self,
-#                 model_define_inputs,
-#                 model_bijector_inputs,
-#                 verbose=True):
-#        print("Initializing the MAF default Bijector.")
-#        super().__init__(model_define_inputs,
-#                         model_bijector_inputs,
-#                         verbose)
-#        verbose, verbose_sub = self.get_verbosity(verbose)
-#        self._model_defint_inputs : Dict
-#        self._model_bijector_inputs : Dict
-#        self.NN : Union[MAFNetwork_default,MAFNetwork_custom]
-#
-#    def define_bijector(self, verbose = None):
-#        pass
-#
-#
-#class MAFBijector_custom(AbstractBijector):
-#    """
-#    """
-#    def __init__(self,
-#                 model_define_inputs,
-#                 model_bijector_inputs,
-#                 verbose=True):
-#        print("Initializing the MAF custom Bijector.")
-#        super().__init__(model_define_inputs,
-#                         model_bijector_inputs,
-#                         verbose)
-#        verbose, verbose_sub = self.get_verbosity(verbose)
-#        self._model_defint_inputs : Dict
-#        self._model_bijector_inputs : Dict
-#        self.NN : Union[MAFNetwork_default,MAFNetwork_custom]
-#
-#    def define_bijector(self, verbose = None):
-#        pass
-
+                         verbose = verbose)

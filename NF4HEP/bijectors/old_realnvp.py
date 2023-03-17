@@ -7,7 +7,7 @@ __all__ = ['RealNVPNetwork',
 import numpy as np
 from timeit import default_timer as timer
 import tensorflow as tf
-from tensorflow.keras import layers, Input
+from tensorflow.python.keras import layers, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Layer
 import tensorflow_probability as tfp

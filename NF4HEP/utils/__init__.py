@@ -9,4 +9,4 @@ from . import resources
 from . import utils
 from . import verbosity
 
-mplstyle_path = path.join(path.split(path.realpath(__file__))[0],"inference/matplotlib.mplstyle")
+mplstyle_path = path.join(path.split(path.realpath(__file__))[0],"matplotlib.mplstyle")

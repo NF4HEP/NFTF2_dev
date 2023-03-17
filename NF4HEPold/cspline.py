@@ -6,7 +6,7 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 tfb= tfp.bijectors
 
-from tensorflow.keras import layers, Input
+from tensorflow.python.keras import layers, Input
 from tensorflow.keras.layers import Layer, Dense
 from tensorflow.keras.models import Model
 

@@ -22,10 +22,10 @@ import random
 import json
 import tensorflow as tf # type: ignore
 import tensorflow.compat.v1 as tf1 # type: ignore
-from tensorflow.keras import Input # type: ignore
-from tensorflow.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses # type: ignore
-from tensorflow.keras.models import Model # type: ignore
-from tensorflow.keras.layers import Layer #type: ignore
+from tensorflow.python.keras import Input # type: ignore
+from tensorflow.python.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses # type: ignore
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.layers import Layer
 import tensorflow_probability as tfp # type: ignore
 tfd = tfp.distributions
 tfb= tfp.bijectors
@@ -331,11 +331,11 @@ def check_add_suffix(s: str,
     else:
         return s+suff
 
-def minus_logprob(y_true, y_pred):
-    """
-    Function used as custom loss function
-    """
-    return -y_pred
+#def minus_logprob(y_true, y_pred):
+#    """
+#    Function used as custom loss function
+#    """
+#    return -y_pred
 
 def strip_prefix(s, pref):
     if s.startswith(pref):

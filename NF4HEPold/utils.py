@@ -14,7 +14,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime
 from timeit import default_timer as timer
-from tensorflow.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses
+from tensorflow.python.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses
 
 from . import show_prints
 from .show_prints import print

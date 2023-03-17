@@ -32,7 +32,7 @@ from tensorflow_probability.python.internal import dtype_util #type: ignore
 from tensorflow_probability.python.internal import parameter_properties #type: ignore
 from tensorflow_probability.python.internal import tensor_util #type: ignore
 from tensorflow_probability.python.internal import tensorshape_util #type: ignore
-import tensorflow_probability as tfp #type: ignore
+import tensorflow_probability as tfp
 tfb = tfp.bijectors
 
 def _ensure_at_least_1d(t):

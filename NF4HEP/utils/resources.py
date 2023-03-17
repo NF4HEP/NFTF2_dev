@@ -2,15 +2,17 @@ import os
 import numpy as np
 import builtins
 #from multiprocessing import cpu_count
+import tensorflow as tf # type: ignore
 from tensorflow.python.client import device_lib # type: ignore
 import tensorflow as tf # type: ignore
 import cpuinfo # type: ignore
 
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
-from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
-
-from .verbosity import print, Verbosity
+from NF4HEP.utils import utils
+from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, StrArray, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
+from NF4HEP.utils.verbosity import print
+from NF4HEP.utils.verbosity import Verbosity
 
 header_string_1 = "=============================="
 header_string_2 = "------------------------------"
@@ -48,17 +50,31 @@ class ResourcesManager(Verbosity):
                  verbose: Optional[IntBool] = None
                 ) -> None:
         # Attributes type declatation
+        self._resources_inputs: Dict[str,Any]
         self._available_gpus: List
         self._available_cpus: List
         self._active_gpus: List
         self._gpu_mode: bool
+        self._training_device = None
+        self._strategy: Optional[tf.distribute.Strategy]
         # Initialise parent Verbosity class
         super().__init__(verbose)
         # Set verbosity
         verbose, verbose_sub = self.get_verbosity(verbose)
         # Initialize object
         print(header_string_1,"\nInitializing Resources Manager.\n", show = verbose)
-        self.__set_resources(resources_inputs = resources_inputs, verbose = verbose)
+        self.resources_inputs = resources_inputs if resources_inputs is not None else {}
+        self.__set_resources(verbose = verbose)
+
+    @property
+    def resources_inputs(self) -> Dict[str,Any]:
+        return self._resources_inputs
+    
+    @resources_inputs.setter
+    def resources_inputs(self,
+                         resources_inputs: Dict[str,Any]
+                        ) -> None:
+        self._resources_inputs = resources_inputs
 
     @property
     def available_gpus(self) -> List:
@@ -75,9 +91,16 @@ class ResourcesManager(Verbosity):
     @property
     def gpu_mode(self) -> bool:
         return self._gpu_mode
-
+    
+    @property
+    def training_device(self) -> Optional[str]:
+        return self._training_device
+    
+    @property
+    def strategy(self) -> Optional[tf.distribute.Strategy]:
+        return self._strategy
+    
     def __set_resources(self,
-                        resources_inputs: Optional[Dict[str,Any]] = None,
                         verbose: Optional[IntBool] = None
                        ) -> None:
         """
@@ -97,16 +120,15 @@ class ResourcesManager(Verbosity):
                 See :argument:`verbose <common_methods_arguments.verbose>`.
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
-        resources_inputs = resources_inputs if resources_inputs is not None else {}
         self.check_tf_gpu(verbose=verbose)
-        if resources_inputs == {}:
-            self.get_available_cpus(verbose=verbose_sub)
-            self.set_gpus(gpus_list="all", verbose=verbose_sub)
-        else:
-            self._available_gpus = resources_inputs["available_gpus"]
-            self._available_cpus = resources_inputs["available_cpu"]
-            self._active_gpus = resources_inputs["active_gpus"]
-            self._gpu_mode = resources_inputs["gpu_mode"]
+        utils.check_set_dict_keys(self._resources_inputs, 
+                                  ["active_gpus","target_gpu","strategy"],
+                                  ["all","auto",None], 
+                                  verbose = verbose_sub)
+        
+        self.get_available_cpus(verbose=verbose_sub)
+        self.set_gpus(verbose=verbose_sub)
+        self.set_strategy(verbose=verbose_sub)
 
     def check_tf_gpu(self, verbose: Optional[IntBool] = None) -> None:
         if not tf.test.gpu_device_name():
@@ -138,10 +160,10 @@ class ResourcesManager(Verbosity):
         self._available_cpus = available_cpus
 
     def set_gpus(self,
-                 gpus_list: Optional[Union[List[int],str]] = "all", 
                  verbose: Optional[IntBool] = None
                 ) -> None:
         verbose, verbose_sub = self.get_verbosity(verbose)
+        gpus_list = self.resources_inputs["active_gpus"]
         self.get_available_gpus(verbose=verbose_sub)
         if len(self.available_gpus) == 0:
             print('No available GPUs. Running with CPU support only.', show = verbose)
@@ -177,6 +199,41 @@ class ResourcesManager(Verbosity):
             self._gpu_mode = False
         else:
             self._gpu_mode = True
+            
+    def set_strategy(self,
+                     verbose: Optional[IntBool] = None
+                    ) -> None:
+        gpu = self.resources_inputs["target_gpu"]
+        strategy = self.resources_inputs["strategy"]
+        if strategy is None:
+            self._strategy = None
+        elif strategy == "OneDevice":
+            if isinstance(gpu,str):
+                if gpu == "auto":
+                    gpu = 0
+                else:
+                    print("WARNING: invalid 'target_gpus' input argument. Proceeding with 'target_gpus=[0]'.")
+                    gpu = 0
+            if self.gpu_mode:
+                if gpu > len(self.available_gpus):
+                    print("gpu", gpu, "does not exist. Continuing on gpu '0'.\n", show = verbose)
+                    gpu = 0
+                self._training_device = self.available_gpus[gpu]
+                if self.training_device:
+                    device_id = self.training_device[0]
+                else:
+                    device_id = None
+            else:
+                if gpu != "auto":
+                    print("GPU mode selected without any active GPU. Proceeding with CPU support.\n", show = verbose)
+                self._training_device = self.available_cpus[0]
+                if self.training_device:
+                    device_id = self.training_device
+                else:
+                    device_id = None
+            self._strategy = tf.distribute.OneDeviceStrategy(device=device_id)
+        else:
+            print("WARNING: TF2 strategies other than OneDeviceStrategy need to be manually implemented.")
 
     def set_gpus_env(self,
                      gpus_list: Optional[Union[List[int],str]] = "all", 

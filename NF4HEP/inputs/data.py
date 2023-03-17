@@ -33,7 +33,7 @@ from sklearn.preprocessing import StandardScaler #type: ignore
 
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
-from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
+from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, StrArray, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
 from NF4HEP.base import ObjectManager, Name, FileManager, PredictionsManager, FiguresManager, Inference, Plotter, InvalidInput
 from NF4HEP.utils import mplstyle_path
 from NF4HEP import print
@@ -1941,7 +1941,7 @@ class DataManager(ObjectManager,Verbosity):
     def __init__(self,
                  data_main: DataMain,
                  npoints: Optional[List[int]] = None, # list with [n_train, n_val, n_test]
-                 preprocessing: Optional[List[bool]] = None, # list with [scalerX_bool, scalerY_bool, rotationX_bool]s
+                 preprocessing: Optional[List[bool]] = None, # list with [scalerX_bool, scalerY_bool, rotationX_bool]
                  seed: Optional[int] = None,
                  verbose: Optional[IntBool] = None
                 ) -> None:

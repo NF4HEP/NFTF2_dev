@@ -14,7 +14,7 @@ tfd = tfp.distributions
 
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
-from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
+from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, StrArray, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
 from NF4HEP.base import Name, FileManager, PredictionsManager, FiguresManager, Inference, Plotter
 from NF4HEP.utils import mplstyle_path
 from NF4HEP import print

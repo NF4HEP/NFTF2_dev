@@ -2,9 +2,9 @@ import os
 import numpy as np
 import builtins
 #from multiprocessing import cpu_count
-from tensorflow.python.client import device_lib
-import tensorflow as tf
-import cpuinfo
+from tensorflow.python.client import device_lib # type: ignore
+import tensorflow as tf # type: ignore
+import cpuinfo # type: ignore
 
 from .show_prints import print, Verbosity
 

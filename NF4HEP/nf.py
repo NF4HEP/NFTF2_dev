@@ -13,26 +13,27 @@ import weakref
 import matplotlib.pyplot as plt #type: ignore
 import tensorflow as tf # type: ignore
 import tensorflow.compat.v1 as tf1 # type: ignore
-from tensorflow.keras import backend as K # type: ignore
-from tensorflow.keras import Input # type: ignore
-from tensorflow.keras import layers, initializers, models, regularizers, constraints, callbacks, optimizers, metrics, losses # type: ignore
+from tensorflow.python.keras import backend as K # type: ignore
+from tensorflow.python.keras import Input # type: ignore
+from tensorflow.python.keras import layers, initializers, models, regularizers, constraints, callbacks, optimizers, metrics, losses # type: ignore
 from tensorflow.keras.callbacks import Callback # type: ignore
 from tensorflow.keras.metrics import Metric # type: ignore
 from tensorflow.keras.optimizers import Optimizer # type: ignore
-from tensorflow.keras.models import Model # type: ignore
-from tensorflow.keras.layers import Layer #type: ignore
+from tensorflow.python.keras.models import Model
+from tensorflow.keras.losses import Loss # type: ignore
+from tensorflow.python.keras.layers import Layer
 import tensorflow_probability as tfp # type: ignore
 tfd = tfp.distributions
 tfb = tfp.bijectors
 
 from asyncio import base_subprocess
-from numpy import typing as npt
+from numpy import typing as npt # type: ignore
 from pathlib import Path
 from timeit import default_timer as timer
 
 from typing import Union, List, Dict, Callable, Tuple, Optional, NewType, Type, Generic, Any, TypeVar, TYPE_CHECKING
 from typing_extensions import TypeAlias
-from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
+from NF4HEP.utils.custom_types import Array, ArrayInt, ArrayStr, DataType, StrPath, IntBool, StrBool, StrList, StrArray, FigDict, LogPredDict, Number, DTypeStr, DTypeStrList, DictStr
 from NF4HEP.bijectors import arqspline
 from NF4HEP.bijectors import crqspline
 from NF4HEP.bijectors import maf
@@ -43,10 +44,10 @@ from NF4HEP.bijectors.maf import MAFNetwork, MAFBijector
 from NF4HEP.bijectors.realnvp import RealNVPChain#, RealNVPNetwork, RealNVPBijector
 from NF4HEP.utils import corner
 from NF4HEP.utils import utils
+from NF4HEP.utils import custom_losses
 from NF4HEP.utils.corner import extend_corner_range
 from NF4HEP.utils.corner import get_1d_hist
 from NF4HEP.utils.resources import ResourcesManager
-from NF4HEP.utils.utils import minus_logprob
 from NF4HEP.utils.verbosity import print
 from NF4HEP.utils.verbosity import Verbosity
 from NF4HEP.utils import mplstyle_path
@@ -55,6 +56,7 @@ from NF4HEP.base import ObjectManager, Name, FileManager, PredictionsManager, Fi
 
 header_string_1 = "=============================="
 header_string_2 = "------------------------------"
+strategy_header_string = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
 class NFFileManager(FileManager):
     """
@@ -231,14 +233,14 @@ class NFFileManager(FileManager):
     def load_model(self, verbose: Optional[IntBool] = None) -> None:
         verbose, _ = self.get_verbosity(verbose)
         start = timer()
-        custom_objects = {"minus_logprob": minus_logprob}
+        custom_objects = custom_losses.losses()
         if self.input_model_tf_file is not None:
             input_file = self.input_model_tf_file
         else:
             raise Exception("Input file not defined.")
         if input_file.exists():
             try:
-                self.ManagedObject.Trainer._NFModel = models.load_model(input_file, custom_objects = {"minus_logprob": minus_logprob})
+                self.ManagedObject.Trainer._NFModel = models.load_model(input_file, custom_objects = custom_losses.losses())
             except:
                 print(header_string_2,"\nWARNING: TF model load failed. The model attribute will be initialized to None.\n",show = True)
                 self.ManagedObject.Trainer._NFModel = None
@@ -483,7 +485,7 @@ class NFMain(Verbosity):
     def __init__(self,
                  file_manager: NFFileManager,
                  data: Optional[DataMain] = None,
-                 base_distribution_inputs: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.AutoCompositeTensorDistribution]] = None,
+                 base_distribution_inputs: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.Distribution]] = None,
                  model_define_inputs: Optional[Dict[str, Any]] = None,
                  model_bijector_inputs: Optional[Dict[str, Any]] = None,
                  model_chain_inputs: Optional[Dict[str, Any]] = None,
@@ -492,8 +494,6 @@ class NFMain(Verbosity):
                  model_compile_inputs: Optional[Dict[str,Any]] = None,
                  model_train_inputs: Optional[Dict[str,Any]] = None,
                  resources_inputs: Optional[Dict[str,Any]] = None,
-#                 chain: allowed_chains_types,
-#                 trainer: NFTrainer,
                  seed: Optional[int] = None,
                  verbose: IntBool = True
                 ) -> None:
@@ -511,7 +511,7 @@ class NFMain(Verbosity):
         self._TrainableDistribution: NFDistribution
         self._Trainer: NFTrainer
         # Attributes type declatation (others)
-        self._base_distribution_inputs: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.AutoCompositeTensorDistribution]]
+        self._base_distribution_inputs: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.Distribution]]
         self._log: LogPredDict
         self._model_define_inputs: Dict[str, Any]
         self._model_bijector_inputs: Dict[str, Any]
@@ -522,6 +522,7 @@ class NFMain(Verbosity):
         self._model_train_inputs: Dict[str,Any]
         self._name: str
         self._resources_inputs: Dict[str,Any]
+        self._seed: int
         # Initialize parent Verbosity class
         super().__init__(verbose)
         # Set verbosity
@@ -539,24 +540,27 @@ class NFMain(Verbosity):
         self.__set_data(data = data)
         if self.FileManager.input_file is None:
             print(header_string_2,"\nInitializing new NFMain object.\n", show = verbose)
+            self.base_distribution_inputs = base_distribution_inputs
+            self.model_define_inputs = model_define_inputs if model_define_inputs is not None else {}
+            self.model_bijector_inputs = model_bijector_inputs if model_bijector_inputs is not None else {}
+            self.model_chain_inputs = model_chain_inputs if model_chain_inputs is not None else {}
+            self.model_optimizer_inputs = model_optimizer_inputs if model_optimizer_inputs is not None else {}
+            self.model_callbacks_inputs = model_callbacks_inputs if model_callbacks_inputs is not None else []
+            self.model_compile_inputs = model_compile_inputs if model_compile_inputs is not None else {}
+            self.model_train_inputs = model_train_inputs if model_train_inputs is not None else {}
+            self.resources_inputs = resources_inputs if resources_inputs is not None else {}
             self.seed = seed if seed is not None else 0
-            self.__set_model_inputs(base_distribution_inputs = base_distribution_inputs,
-                                    model_define_inputs = model_define_inputs,
-                                    model_bijector_inputs = model_bijector_inputs,
-                                    model_chain_inputs = model_chain_inputs,
-                                    model_optimizer_inputs = model_optimizer_inputs,
-                                    model_callbacks_inputs = model_callbacks_inputs,
-                                    model_compile_inputs = model_compile_inputs,
-                                    model_train_inputs = model_train_inputs,
-                                    resources_inputs = resources_inputs)
             chain_name = self.model_bijector_inputs["name"]+"Chain"
-            self.Chain = eval(chain_name)(model_define_inputs = self.model_define_inputs,
-                                          model_bijector_inputs = self.model_bijector_inputs,
-                                          model_chain_inputs = self.model_chain_inputs,
-                                          verbose = True)
             self.Trainer = NFTrainer(nf_main = self)
-            self.BaseDistribution = NFDistribution(nf_main = self, distribution = self.base_distribution_inputs)
-            self.TrainableDistribution = NFDistribution(nf_main = self, distribution = tfd.TransformedDistribution(self.BaseDistribution.distribution,self.Chain))
+            print(strategy_header_string,"\nExecuting within strategy context:",self.Trainer.Resources.strategy,".\n",show=verbose)
+            self.Chain = self.Trainer.Resources.strategy_executor(eval(chain_name)(model_define_inputs = self.model_define_inputs,
+                                                                                   model_bijector_inputs = self.model_bijector_inputs,
+                                                                                   model_chain_inputs = self.model_chain_inputs,
+                                                                                   verbose = verbose))
+            self.BaseDistribution = self.Trainer.Resources.strategy_executor(NFDistribution(nf_main = self, distribution = self.base_distribution_inputs))
+            self.TrainableDistribution = self.Trainer.Resources.strategy_executor(NFDistribution(nf_main = self, distribution = tfd.TransformedDistribution(self.BaseDistribution.distribution,self.Chain)))
+            print("\nExecution in strategy context done.",show=verbose)
+            print(strategy_header_string,"\n",show=verbose)
         else:
             print(header_string_2,"\nLoading existing NFMain object.\n", show = verbose)
             for k,v in {"data": data, 
@@ -574,15 +578,18 @@ class NFMain(Verbosity):
                     print(header_string_2,"\nWARNING: an input file was specified and the argument '",k,"' will be ignored. The related attribute will be set from the input file.\n", show = True)
             self.FileManager.load(verbose = verbose)
             chain_name = self.model_bijector_inputs["name"]+"Chain"
-            self.Chain = eval(chain_name)(model_define_inputs = self.model_define_inputs,
-                                          model_bijector_inputs = self.model_bijector_inputs,
-                                          model_chain_inputs = self.model_chain_inputs,
-                                          verbose = True)
             self.Trainer = NFTrainer(nf_main = self)
-            self.BaseDistribution = NFDistribution(nf_main = self, distribution = self.base_distribution_inputs)
-            self.TrainableDistribution = NFDistribution(nf_main = self, distribution = tfd.TransformedDistribution(self.BaseDistribution.distribution,self.Chain))
-            self.FileManager.load_history(verbose = verbose_sub)
-            self.FileManager.load_model(verbose = verbose_sub)
+            print(strategy_header_string,"\nExecuting within strategy context:",self.Trainer.Resources.strategy,".\n",show=verbose)
+            self.Chain = self.Trainer.Resources.strategy_executor(eval(chain_name)(model_define_inputs = self.model_define_inputs,
+                                                                                   model_bijector_inputs = self.model_bijector_inputs,
+                                                                                   model_chain_inputs = self.model_chain_inputs,
+                                                                                   verbose = verbose))
+            self.BaseDistribution = self.Trainer.Resources.strategy_executor(NFDistribution(nf_main = self, distribution = self.base_distribution_inputs))
+            self.TrainableDistribution = self.Trainer.Resources.strategy_executor(NFDistribution(nf_main = self, distribution = tfd.TransformedDistribution(self.BaseDistribution.distribution,self.Chain)))
+            self.Trainer.Resources.strategy_executor(self.FileManager.load_history(verbose = verbose_sub))
+            self.Trainer.Resources.strategy_executor(self.FileManager.load_model(verbose = verbose_sub))
+            print("\nExecution in strategy context done.",show=verbose)
+            print(strategy_header_string,"\n",show=verbose)
         self.Inference = NFInference(nf_main = self)
         print(header_string_2,"\nSetting Inference.\n", show = verbose)
         self.Plotter = NFPlotter(nf_main = self)
@@ -633,38 +640,136 @@ class NFMain(Verbosity):
     @property
     def model_define_inputs(self) -> Dict[str, Any]:
         return self._model_define_inputs
+    
+    @model_define_inputs.setter
+    def model_define_inputs(self,
+                              model_define_inputs: Dict[str, Any]
+                             ) -> None:
+        self._model_define_inputs = dict(model_define_inputs)
+        self._model_define_inputs["ndims"] = self.Data.DataManager.ndims
 
     @property
     def model_bijector_inputs(self) -> Dict[str, Any]:
         return self._model_bijector_inputs
+    
+    @model_bijector_inputs.setter
+    def model_bijector_inputs(self,
+                              model_bijector_inputs: Dict[str, Any]
+                             ) -> None:
+        self._model_bijector_inputs = dict(model_bijector_inputs)
+        try:
+            self._model_bijector_inputs["name"]
+        except:
+            raise KeyError("The bijector 'name' key must be specified in the 'model_bijector_inputs' input dictionary.")
 
     @property
     def model_chain_inputs(self) -> Dict[str, Any]:
         return self._model_chain_inputs
+    
+    @model_chain_inputs.setter
+    def model_chain_inputs(self,
+                           model_chain_inputs: Dict[str, Any]
+                          ) -> None:
+        self._model_chain_inputs = dict(model_chain_inputs)
 
     @property
     def model_optimizer_inputs(self) -> Union[Dict[str,Any],str]:
         return self._model_optimizer_inputs
+    
+    @model_optimizer_inputs.setter
+    def model_optimizer_inputs(self,
+                               model_optimizer_inputs: Union[Dict[str,Any],str],
+                              ) -> None:
+        verbose, verbose_sub = self.get_verbosity(self.verbose)
+        if isinstance(model_optimizer_inputs, str):
+            self._model_optimizer_inputs = str(model_optimizer_inputs)
+        elif isinstance(model_optimizer_inputs, dict):
+            try:
+                model_optimizer_inputs["name"]
+                self._model_optimizer_inputs = dict(model_optimizer_inputs)
+            except:
+                print("WARNING: The optimizer ", str(self.model_optimizer_inputs), " has unspecified name. Optimizer will be set to the default 'optimizers.Adam()'.", show = True)
+                self._model_optimizer_inputs = {"name": "Adam"}
+        else:
+            print("WARNING: The 'model_optimizer_inputs' argument is neither a string nor a dictionary. Optimizer will be set to the default 'optimizers.Adam()'.", show = True)
+            self._model_optimizer_inputs = dict({"name": "Adam"})
 
     @property
     def model_callbacks_inputs(self) -> List[Union[Dict[str,Any],str]]:
         return self._model_callbacks_inputs
+    
+    @model_callbacks_inputs.setter
+    def model_callbacks_inputs(self,
+                               model_callbacks_inputs: List[Union[Dict[str,Any],str]],
+                              ) -> None:
+        verbose, verbose_sub = self.get_verbosity(self.verbose)
+        self._model_callbacks_inputs = list(model_callbacks_inputs)
 
     @property
     def model_compile_inputs(self) -> Dict[str,Any]:
         return self._model_compile_inputs
+    
+    @model_compile_inputs.setter
+    def model_compile_inputs(self,
+                             model_compile_inputs: Dict[str,Any],
+                            ) -> None:
+        """
+        """
+        verbose, verbose_sub = self.get_verbosity(self.verbose)
+        self._model_compile_inputs = dict(model_compile_inputs)
+        utils.check_set_dict_keys(self._model_compile_inputs, 
+                                  ["loss","metrics"],
+                                  [None,[]], 
+                                  verbose = verbose_sub)
 
     @property
     def model_train_inputs(self) -> Dict[str,Any]:
         return self._model_train_inputs
+    
+    @model_train_inputs.setter
+    def model_train_inputs(self,
+                           model_train_inputs: Dict[str,Any],
+                          ) -> None:
+        verbose, verbose_sub = self.get_verbosity(self.verbose)
+        self._model_train_inputs = dict(model_train_inputs)
+        try:
+            self._model_train_inputs["epochs"]
+        except:
+            print("WARNING: the number of epochs input 'epochs' has not been specified. Setting a default of 20 epochs.", show = True)
+            self._model_train_inputs["epochs"] = 20
+        try:
+            self._model_train_inputs["batch_size"]
+        except:
+            print("WARNING: the batch size input 'batch_size' has not been specified. Setting a default of 512.", show = True)
+            self._model_train_inputs["batch_size"] = 512
 
     @property
-    def base_distribution_inputs(self) -> Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.AutoCompositeTensorDistribution]]:
+    def base_distribution_inputs(self) -> Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.Distribution]]:
         return self._base_distribution_inputs
-
+    
+    @base_distribution_inputs.setter
+    def base_distribution_inputs(self,
+                                 base_distribution_inputs: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.Distribution]]
+                                ) -> None:
+        verbose, verbose_sub = self.get_verbosity(self.verbose)
+        if isinstance(base_distribution_inputs,str):
+            self._base_distribution_inputs = str(base_distribution_inputs)
+        elif isinstance(base_distribution_inputs,tfp.distributions.distribution.Distribution):
+            self._base_distribution_inputs = base_distribution_inputs
+        elif isinstance(base_distribution_inputs, dict):
+            self._base_distribution_inputs = dict(base_distribution_inputs)
+        else:
+            self._base_distribution_inputs = None
+    
     @property
     def resources_inputs(self) -> Dict[str,Any]:
         return self._resources_inputs
+
+    @resources_inputs.setter
+    def resources_inputs(self,
+                         resources_inputs: Dict[str,Any],
+                        ) -> None:
+        self._resources_inputs =  dict(resources_inputs)
 
     @property
     def FileManager(self) -> NFFileManager:
@@ -898,49 +1003,6 @@ class NFMain(Verbosity):
         self.log = {utils.generate_timestamp(): {"action": "seed reset",
                                                  "value": seed}}
 
-    def __set_model_inputs(self,
-                           base_distribution_inputs: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.AutoCompositeTensorDistribution]] = None,
-                           model_define_inputs: Optional[Dict[str, Any]] = None,
-                           model_bijector_inputs: Optional[Dict[str, Any]] = None,
-                           model_chain_inputs: Optional[Dict[str, Any]] = None,
-                           model_optimizer_inputs: Optional[Union[Dict[str,Any],str]] = None,
-                           model_callbacks_inputs: Optional[List[Union[Dict[str,Any],str]]] = None,
-                           model_compile_inputs: Optional[Dict[str,Any]] = None,
-                           model_train_inputs: Optional[Dict[str,Any]] = None,
-                           resources_inputs: Optional[Dict[str,Any]] = None
-                          ) -> None:
-        """
-        """
-        self._model_bijector_inputs = dict(model_bijector_inputs) if model_bijector_inputs is not None else {}
-        try:
-            self._model_bijector_inputs["name"]
-        except:
-            raise KeyError("The bijector 'name' key must be specified in the 'model_bijecto_inputs' input dictionary.")
-        self._model_define_inputs = dict(model_define_inputs) if model_define_inputs is not None else {}
-        try:
-            self._model_define_inputs["ndims"]
-        except:
-            self._model_define_inputs["ndims"] = self.Data.DataManager.ndims    
-        self._model_chain_inputs = dict(model_chain_inputs) if model_chain_inputs is not None else {}
-        if isinstance(model_optimizer_inputs, dict):
-            self._model_optimizer_inputs = dict(model_optimizer_inputs)
-        elif isinstance(model_optimizer_inputs, str):
-            self._model_optimizer_inputs = str(model_optimizer_inputs)
-        else:
-            self._model_optimizer_inputs = {}
-        self._model_callbacks_inputs = list(model_callbacks_inputs) if model_callbacks_inputs is not None else []
-        self._model_compile_inputs = dict(model_compile_inputs) if model_compile_inputs is not None else {}
-        self._model_train_inputs = dict(model_train_inputs) if model_train_inputs is not None else {}
-        if isinstance(base_distribution_inputs,str):
-            self._base_distribution_inputs = str(base_distribution_inputs)
-        elif isinstance(base_distribution_inputs,tfp.distributions.distribution.AutoCompositeTensorDistribution):
-            self._base_distribution_inputs = base_distribution_inputs
-        elif isinstance(base_distribution_inputs, dict):
-            self._base_distribution_inputs = dict(base_distribution_inputs)
-        else:
-            self._base_distribution_inputs = None
-        self._resources_inputs = dict(resources_inputs) if resources_inputs is not None else {}
-
 
 #class NFManager(ObjectManager):
 #    """
@@ -977,25 +1039,20 @@ class NFTrainer(ObjectManager, Verbosity):
         self._callbacks_strings: List[str]
         self._epochs_available: int
         self._epochs_required: int
-        self._loss: Callable
+        self._loss: Loss
+        self._loss_string: str
         self._metrics: List[Metric]
         self._metrics_strings: List[str]
-        self._model_optimizer_inputs: Union[Dict[str,Any],str]
-        self._model_callbacks_inputs: List[Union[Dict[str,Any],str]]
-        self._model_compile_inputs: Dict[str,Any]
-        self._model_train_inputs: Dict[str,Any]
         self._optimizer: Optimizer
         self._optimizer_string: str
-        self._resources_inputs: Dict[str,Any]
         self._ManagedObject: "NFMain"
         self._history: Dict[str,Any]
         self._managed_object_name: str
-        self._model_params: Optional[int]
-        self._model_trainable_params: Optional[int]
-        self._model_non_trainable_params: Optional[int]
+        self._model_params: Dict[str,Optional[int]]
         self._NFModel: Optional[Model]
         self._Resources: ResourcesManager
-        self._training_device: Optional[str]
+        #self._strategy: Optional[tf.distribute.Strategy]
+        #self._training_device: Optional[str]
         self._training_time: float
         # Initialise parent ObjectManager class
         ObjectManager.__init__(self, managed_object = nf_main)
@@ -1005,18 +1062,15 @@ class NFTrainer(ObjectManager, Verbosity):
         verbose, verbose_sub = self.get_verbosity(verbose)
         # Initialize object
         print(header_string_1,"\nInitializing NF Trainer.\n", show = verbose)
-        self._model_params = None
-        self._model_trainable_params = None
-        self._model_non_trainable_params = None
+        self._model_params = {"total": None, "trainable": None, "non_trainable": None}
         self._NFModel = None
-        self._training_device = None
+        #self._strategy = None
+        #self._training_device = None
         self._training_time = 0.
         self._history = {}
-        self.model_optimizer_inputs = self.ManagedObject.model_optimizer_inputs
-        self.model_callbacks_inputs = self.ManagedObject.model_callbacks_inputs
-        self.model_compile_inputs = self.ManagedObject.model_compile_inputs
-        self.model_train_inputs = self.ManagedObject.model_train_inputs
-        self.resources_inputs = self.ManagedObject.resources_inputs
+        self._batch_size = self.model_train_inputs["batch_size"]
+        self._epochs_required = self.model_train_inputs["epochs"]
+        self._epochs_available = 0
         self.Resources = ResourcesManager(resources_inputs = self.ManagedObject.resources_inputs, verbose = self.verbose)
         self.__set_tf_objects(verbose = verbose_sub)
 
@@ -1043,95 +1097,31 @@ class NFTrainer(ObjectManager, Verbosity):
 
     @property
     def model_optimizer_inputs(self) -> Union[Dict[str,Any],str]:
-        return self._model_optimizer_inputs
-
-    @model_optimizer_inputs.setter
-    def model_optimizer_inputs(self,
-                               model_optimizer_inputs: Union[Dict[str,Any],str],
-                              ) -> None:
-        verbose, verbose_sub = self.get_verbosity(self.verbose)
-        if isinstance(model_optimizer_inputs, str):
-            self._model_optimizer_inputs = str(model_optimizer_inputs)
-        elif isinstance(model_optimizer_inputs, dict):
-            try:
-                model_optimizer_inputs["name"]
-                self._model_optimizer_inputs = dict(model_optimizer_inputs)
-            except:
-                print("WARNING: The optimizer ", str(self.model_optimizer_inputs), " has unspecified name. Optimizer will be set to the default 'optimizers.Adam()'.", show = True)
-                self._model_optimizer_inputs = {"name": "Adam"}
-        else:
-            print("WARNING: The 'model_optimizer_inputs' argument is neither a string nor a dictionary. Optimizer will be set to the default 'optimizers.Adam()'.", show = True)
-            self._model_optimizer_inputs = dict({"name": "Adam"})
+        return self.ManagedObject.model_optimizer_inputs
 
     @property
     def model_callbacks_inputs(self) -> List[Union[Dict[str,Any],str]]:
-        return self._model_callbacks_inputs
-
-    @model_callbacks_inputs.setter
-    def model_callbacks_inputs(self,
-                               model_callbacks_inputs: List[Union[Dict[str,Any],str]],
-                              ) -> None:
-        verbose, verbose_sub = self.get_verbosity(self.verbose)
-        self._model_callbacks_inputs = list(model_callbacks_inputs)
+        return self.ManagedObject.model_callbacks_inputs
 
     @property
     def model_compile_inputs(self) -> Dict[str,Any]:
-        return self._model_compile_inputs
-
-    @model_compile_inputs.setter
-    def model_compile_inputs(self,
-                             model_compile_inputs: Dict[str,Any],
-                            ) -> None:
-        """
-        """
-        verbose, verbose_sub = self.get_verbosity(self.verbose)
-        self._model_compile_inputs = dict(model_compile_inputs)
-        utils.check_set_dict_keys(self._model_compile_inputs, 
-                                  ["metrics"],
-                                  [[]], 
-                                  verbose = verbose_sub)
+        return self.ManagedObject.model_compile_inputs
 
     @property
     def model_compile_kwargs(self) -> Dict[str,Any]:
-        return utils.dic_minus_keys(self._model_compile_inputs, ["metrics"])
+        return utils.dic_minus_keys(self.model_compile_inputs, ["loss", "metrics"])
 
     @property
     def model_train_inputs(self) -> Dict[str,Any]:
-        return self._model_train_inputs
-
-    @model_train_inputs.setter
-    def model_train_inputs(self,
-                           model_train_inputs: Dict[str,Any],
-                          ) -> None:
-        verbose, verbose_sub = self.get_verbosity(self.verbose)
-        self._model_train_inputs = dict(model_train_inputs)
-        try:
-            self._model_train_inputs["epochs"]
-        except:
-            print("WARNING: the number of epochs input 'epochs' has not been specified. Setting a default of 20 epochs.", show = True)
-            self._model_train_inputs["epochs"] = 20
-        try:
-            self._model_train_inputs["batch_size"]
-        except:
-            print("WARNING: the batch size input 'batch_size' has not been specified. Setting a default of 512.", show = True)
-            self._model_train_inputs["batch_size"] = 512
-        self._batch_size = self._model_train_inputs["batch_size"]
-        self._epochs_required = self._model_train_inputs["epochs"]
-        self._epochs_available = 0
+        return self.ManagedObject.model_train_inputs
         
     @property
     def model_train_kwargs(self) -> Dict[str,Any]:
-        return utils.dic_minus_keys(self._model_train_inputs, ["epochs", "batch_size"])
+        return utils.dic_minus_keys(self.model_train_inputs, ["epochs", "batch_size"])
 
     @property
     def resources_inputs(self) -> Dict[str,Any]:
-        return self._resources_inputs
-
-    @resources_inputs.setter
-    def resources_inputs(self,
-                         resources_inputs: Dict[str,Any],
-                        ) -> None:
-        self._resources_inputs =  resources_inputs
+        return self.ManagedObject.resources_inputs
 
     @property
     def batch_size(self) -> int:
@@ -1148,14 +1138,24 @@ class NFTrainer(ObjectManager, Verbosity):
     @property
     def epochs_required(self) -> int:
         return self._epochs_required
+    
+    @epochs_required.setter
+    def epochs_required(self,
+                        epochs_required: int
+                       ) -> None:
+        self._epochs_required = epochs_required
 
     @property
     def epochs_available(self) -> int:
         return self._epochs_available
 
     @property
-    def loss(self) -> Callable:
+    def loss(self) -> Loss:
         return self._loss
+    
+    @property
+    def loss_string(self) -> str:
+        return self._loss_string
 
     @property
     def metrics(self) -> List[Metric]:
@@ -1166,22 +1166,10 @@ class NFTrainer(ObjectManager, Verbosity):
         return self._metrics_strings
 
     @property
-    def model_params(self) -> Optional[int]:
-        if self._model_params is None:
+    def model_params(self) -> Dict[str,Optional[int]]:
+        if self._model_params["total"] is None:
             print("The 'model_params' attribute is set once the 'model_define' method is called.")
         return self._model_params
-
-    @property
-    def model_trainable_params(self) -> Optional[int]:
-        if self._model_trainable_params is None:
-            print("The 'model_trainable_params' attribute is set once the 'model_define' method is called.")
-        return self._model_trainable_params
-
-    @property
-    def model_non_trainable_params(self) -> Optional[int]:
-        if self._model_non_trainable_params is None:
-            print("The 'model_non_trainable_params' attribute is set once the 'model_define' method is called.")
-        return self._model_non_trainable_params
 
     @property
     def optimizer(self) -> Optimizer:
@@ -1190,12 +1178,16 @@ class NFTrainer(ObjectManager, Verbosity):
     @property
     def optimizer_string(self) -> str:
         return self._optimizer_string
+    
+    #@property
+    #def strategy(self) -> Optional[tf.distribute.Strategy]:
+    #    return self._strategy
 
-    @property
-    def training_device(self) -> Optional[str]:
-        if self._training_device is None:
-            print("The 'training_device' attribute is set once the 'model_compile' method  is called.")
-        return self._training_device
+    #@property
+    #def training_device(self) -> Optional[str]:
+    #    if self._training_device is None:
+    #        print("The 'training_device' attribute is set once the 'model_compile' method  is called.")
+    #    return self._training_device
     
     @property
     def training_time(self) -> float:
@@ -1235,43 +1227,137 @@ class NFTrainer(ObjectManager, Verbosity):
                 See :argument:`verbose <common_methods_arguments.verbose>`.
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
-        print(header_string_1, "\nSetting optimizer\n", show = verbose)
-        self._optimizer = None
-        if isinstance(self.model_optimizer_inputs, str):
-            if "(" in self.model_optimizer_inputs:
-                optimizer_string = "optimizers." + \
-                    self.model_optimizer_inputs.replace("optimizers.", "")
+        def func_to_run():
+            print(header_string_1, "\nSetting optimizer\n", show = verbose)
+            self._optimizer = None
+            if isinstance(self.model_optimizer_inputs, str):
+                if "(" in self.model_optimizer_inputs:
+                    optimizer_string = "optimizers." + \
+                        self.model_optimizer_inputs.replace("optimizers.", "")
+                else:
+                    optimizer_string = "optimizers." + \
+                        self.model_optimizer_inputs.replace(
+                            "optimizers.", "") + "()"
+            else: #elif isinstance(self.model_optimizer_inputs, dict):
+                try:
+                    name = self.model_optimizer_inputs["name"]
+                except:
+                    raise Exception("The optimizer ", str(self.model_optimizer_inputs), " has unspecified name.")
+                try:
+                    args = self.model_optimizer_inputs["args"]
+                except:
+                    args = []
+                try:
+                    kwargs = self.model_optimizer_inputs["kwargs"]
+                except:
+                    kwargs = {}
+                optimizer_string = utils.build_method_string_from_dict("optimizers", name, args, kwargs)
+            if optimizer_string is not None:
+                try:
+                    eval(optimizer_string)
+                    self._optimizer_string = optimizer_string
+                    self._optimizer = eval(self.optimizer_string)
+                    print("Optimizer set to:", self.optimizer_string, ".\n", show = verbose)
+                except Exception as e:
+                    print(e)
+                    raise Exception("Could not set optimizer", optimizer_string, ",\n")
             else:
-                optimizer_string = "optimizers." + \
-                    self.model_optimizer_inputs.replace(
-                        "optimizers.", "") + "()"
-        else: #elif isinstance(self.model_optimizer_inputs, dict):
-            try:
-                name = self.model_optimizer_inputs["name"]
-            except:
-                raise Exception("The optimizer ", str(self.model_optimizer_inputs), " has unspecified name.")
-            try:
-                args = self.model_optimizer_inputs["args"]
-            except:
-                args = []
-            try:
-                kwargs = self.model_optimizer_inputs["kwargs"]
-            except:
-                kwargs = {}
-            optimizer_string = utils.build_method_string_from_dict("optimizers", name, args, kwargs)
-        if optimizer_string is not None:
-            try:
-                eval(optimizer_string)
-                self._optimizer_string = optimizer_string
-                self._optimizer = eval(self.optimizer_string)
-                print("Optimizer set to:", self.optimizer_string, ".\n", show = verbose)
-            except Exception as e:
-                print(e)
-                raise Exception("Could not set optimizer", optimizer_string, ",\n")
-        else:
-            raise Exception("Could not set optimizer. The model_optimizer_inputs argument does not have a valid format (str or dict).")
-        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "optimizer set",
-                                                               "optimizer": self.optimizer_string}}
+                raise Exception("Could not set optimizer. The model_optimizer_inputs argument does not have a valid format (str or dict).")
+            self.ManagedObject.log = {utils.generate_timestamp(): {"action": "optimizer set",
+                                                                   "optimizer": self.optimizer_string}}
+        print(strategy_header_string,"\nExecuting within strategy context:",self.Resources.strategy,".\n",show=verbose)        
+        self.Resources.strategy_executor(func_to_run())
+        print("\nExecution in strategy context done.",show=verbose)
+        print(strategy_header_string,"\n",show=verbose)
+
+    def __set_loss(self, verbose: Optional[IntBool] = None) -> None:
+        """
+        Private method used by the 
+        :meth:`DnnLik.__set_tf_objects <DNNLikelihood.DnnLik._DnnLik__set_tf_objects>` one
+        to set the loss object (it could be a |tf_keras_losses_link| object or a custom loss defined
+        in the :mod:`Dnn_likelihood <dnn_likelihood>` module). It sets the
+        :attr:`DnnLik.loss_string <DNNLikelihood.DnnLik.loss_string>`
+        and :attr:`DnnLik.loss <DNNLikelihood.DnnLik.loss>` attributes. The former is set from the
+        :attr:`DnnLik.__model_compile_inputs <DNNLikelihood.DnnLik._DnnLik__model_compile_inputs>` 
+        dictionary, while the latter is set by evaluating the former.
+
+        - **Arguments**
+
+            - **verbose**
+            
+                See :argument:`verbose <common_methods_arguments.verbose>`.
+        """
+        verbose, verbose_sub = self.get_verbosity(verbose)
+        def func_to_run():
+            print(header_string_1, "\nSetting loss\n", show = verbose)
+            self._loss = None
+            loss_string = None
+            ls = self.model_compile_inputs["loss"]
+            if ls is None:
+                loss_string = "custom_losses.minus_y_pred()"
+            elif isinstance(ls, str):
+                ls = ls.replace("losses.", "")
+                try:
+                    eval("losses." + ls)
+                    loss_string = "losses." + ls
+                except:
+                    try:
+                        eval("losses."+metrics.deserialize(ls).__name__)
+                        loss_string = "losses." + \
+                            metrics.deserialize(ls).__name__
+                    except:
+                        try:
+                            eval("custom_losses."+ls+"()")
+                            loss_string = "custom_losses."+ls+"()"
+                        except:
+                            try:
+                               eval("custom_losses."+custom_losses.metric_name_unabbreviate(ls)+"()")
+                               loss_string = "custom_losses." + custom_losses.metric_name_unabbreviate(ls)+"()"
+                            except:
+                                loss_string = None
+            elif isinstance(ls,dict):
+                try:
+                    name = ls["name"]
+                except:
+                    raise Exception("The loss ", str(ls), " has unspecified name.")
+                try:
+                    args = ls["args"]
+                except:
+                    args = []
+                try:
+                    kwargs = ls["kwargs"]
+                except:
+                    kwargs = {}
+                loss_string = utils.build_method_string_from_dict("losses", name, args, kwargs)
+            else:
+                loss_string = None
+                print("WARNING: Invalid input for loss: ", str(ls), ". The loss will not be added to the model.", show = True)
+            if loss_string is not None:
+                try:
+                    eval(loss_string)
+                    self._loss_string = loss_string
+                    self._loss = eval(self.loss_string)
+                    if "self." in loss_string:
+                        print("\tSet custom loss:", loss_string.replace("self.", ""), ".\n", show = verbose)
+                    else:
+                        print("\tSet loss:", loss_string, ".\n", show = verbose)
+                except Exception as e:
+                    loss_string = "custom_losses.minus_y_pred()"
+                    self._loss_string = loss_string
+                    self._loss = eval(self.loss_string)
+                    print(e)
+                    print("Could not set loss", str(ls), ".\nDefault loss (custom_losses.minus_y_pred) has been set.\n", show = verbose)
+            else:
+                loss_string = "custom_losses.minus_y_pred()"
+                self._loss_string = loss_string
+                self._loss = eval(self.loss_string)
+                print("Could not set loss", str(ls), ".\nDefault loss (custom_losses.minus_y_pred) has been set.\n", show = verbose)
+            self.ManagedObject.log = {utils.generate_timestamp(): {"action": "loss set",
+                                                                   "loss": self.loss_string}}
+        print(strategy_header_string,"\nExecuting within strategy context:",self.Resources.strategy,".\n",show=verbose)        
+        self.Resources.strategy_executor(func_to_run())
+        print("\nExecution in strategy context done.",show=verbose)
+        print(strategy_header_string,"\n",show=verbose)
 
     def __set_metrics(self, verbose: Optional[IntBool] = None) -> None:
         """
@@ -1291,66 +1377,71 @@ class NFTrainer(ObjectManager, Verbosity):
                 See :argument:`verbose <common_methods_arguments.verbose>`.
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
-        self._metrics_strings = []
-        self._metrics = []
-        print(header_string_1, "\nSetting metrics\n", show = verbose)
-        if self.model_compile_inputs["metrics"] is []:
-            print("No metrics have been defined.\n", show = verbose)
-        for met in self.model_compile_inputs["metrics"]:
-            if isinstance(met, str):
-                met = met.replace("metrics.", "")
-                try:
-                    eval("metrics." + met)
-                    metric_string = "metrics." + met
-                except:
+        def func_to_run():
+            print(header_string_1, "\nSetting metrics\n", show = verbose)
+            self._metrics_strings = []
+            self._metrics = []
+            if self.model_compile_inputs["metrics"] is []:
+                print("No metrics have been defined.\n", show = verbose)
+            for met in self.model_compile_inputs["metrics"]:
+                if isinstance(met, str):
+                    met = met.replace("metrics.", "")
                     try:
-                        eval("metrics."+metrics.deserialize(met).__name__)
-                        metric_string = "metrics." + \
-                            metrics.deserialize(met).__name__
+                        eval("metrics." + met)
+                        metric_string = "metrics." + met
                     except:
                         try:
-                            eval("self."+met)
-                            metric_string = "self."+met
+                            eval("metrics."+metrics.deserialize(met).__name__)
+                            metric_string = "metrics." + \
+                                metrics.deserialize(met).__name__
                         except:
-                            # try:
-                            #    eval("custom_losses."+custom_losses.metric_name_unabbreviate(met))
-                            #    metric_string = "custom_losses." + custom_losses.metric_name_unabbreviate(met)
-                            # except:
-                            metric_string = None
-            elif isinstance(met,dict):
-                try:
-                    name = met["name"]
-                except:
-                    raise Exception("The metric ", str(met), " has unspecified name.")
-                try:
-                    args = met["args"]
-                except:
-                    args = []
-                try:
-                    kwargs = met["kwargs"]
-                except:
-                    kwargs = {}
-                metric_string = utils.build_method_string_from_dict("metrics", name, args, kwargs)
-            else:
-                metric_string = None
-                print("WARNING: Invalid input for metric: ", str(met), ". The metric will not be added to the model.", show = True)
-            if metric_string is not None:
-                try:
-                    eval(metric_string)
-                    self._metrics_strings.append(metric_string)
-                    if "self." in metric_string:
-                        print("\tAdded custom metric:", metric_string.replace("self.", ""), ".\n", show = verbose)
-                    else:
-                        print("\tAdded metric:", metric_string, ".\n", show = verbose)
-                except Exception as e:
-                    print(e)
-                    print("Could not add metric", metric_string, ".\n", show = verbose)
-            else:
-                print("Could not add metric", str(met), ".\n", show = verbose)
-        for metric_string in self.metrics_strings:
-            self._metrics.append(eval(metric_string))
-        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "metrics set",
-                                                               "metrics": self.metrics_strings}}
+                            try:
+                                eval("custom_losses."+met+"()")
+                                metric_string = "custom_losses."+met+"()"
+                            except:
+                                try:
+                                    eval("custom_losses."+custom_losses.metric_name_unabbreviate(met)+"()")
+                                    metric_string = "custom_losses." + custom_losses.metric_name_unabbreviate(met)+"()"
+                                except:
+                                    metric_string = None
+                elif isinstance(met,dict):
+                    try:
+                        name = met["name"]
+                    except:
+                        raise Exception("The metric ", str(met), " has unspecified name.")
+                    try:
+                        args = met["args"]
+                    except:
+                        args = []
+                    try:
+                        kwargs = met["kwargs"]
+                    except:
+                        kwargs = {}
+                    metric_string = utils.build_method_string_from_dict("metrics", name, args, kwargs)
+                else:
+                    metric_string = None
+                    print("WARNING: Invalid input for metric: ", str(met), ". The metric will not be added to the model.", show = True)
+                if metric_string is not None:
+                    try:
+                        eval(metric_string)
+                        self._metrics_strings.append(metric_string)
+                        if "self." in metric_string:
+                            print("\tAdded custom metric:", metric_string.replace("self.", ""), ".\n", show = verbose)
+                        else:
+                            print("\tAdded metric:", metric_string, ".\n", show = verbose)
+                    except Exception as e:
+                        print(e)
+                        print("Could not add metric", metric_string, ".\n", show = verbose)
+                else:
+                    print("Could not add metric", str(met), ".\n", show = verbose)
+            for metric_string in self.metrics_strings:
+                self._metrics.append(eval(metric_string))
+            self.ManagedObject.log = {utils.generate_timestamp(): {"action": "metrics set",
+                                                                   "metrics": self.metrics_strings}}
+        print(strategy_header_string,"\nExecuting within strategy context:",self.Resources.strategy,".\n",show=verbose)        
+        self.Resources.strategy_executor(func_to_run())
+        print("\nExecution in strategy context done.",show=verbose)
+        print(strategy_header_string,"\n",show=verbose)
 
     def __set_callbacks(self, verbose: Optional[IntBool] = None) -> None:
         """
@@ -1369,76 +1460,92 @@ class NFTrainer(ObjectManager, Verbosity):
                 See :argument:`verbose <common_methods_arguments.verbose>`.
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
-        print(header_string_1, "\nSetting callbacks\n", show = verbose)
-        self._callbacks_strings = []
-        self._callbacks = []
-        for cb in self.model_callbacks_inputs:
-            if isinstance(cb,str):
-                if cb == "ModelCheckpoint":
-                    self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_checkpoints_folder)
-                    cb_string = "callbacks.ModelCheckpoint(filepath=r'" + str(self.ManagedObject.FileManager.output_checkpoints_files)+"')"
-                elif cb == "TensorBoard":
-                    self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_tensorboard_log_dir)
-                    cb_string = "callbacks.TensorBoard(log_dir=r'" + str(self.ManagedObject.FileManager.output_tensorboard_log_dir)+"')"
-                elif cb == "PlotLossesKeras":
-                    self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_figure_plot_losses_keras_file)
-                    cb_string = "PlotLossesKeras(outputs=[MatplotlibPlot(figpath = r'" + str(self.ManagedObject.FileManager.output_figure_plot_losses_keras_file)+"')])"
-                else:
-                    if "(" in cb:
-                        cb_string = "callbacks."+cb.replace("callbacks.", "")
+        def func_to_run():
+            print(header_string_1, "\nSetting callbacks\n", show = verbose)
+            self._callbacks_strings = []
+            self._callbacks = []
+            for cb in self.model_callbacks_inputs:
+                if isinstance(cb,str):
+                    if cb == "ModelCheckpoint":
+                        self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_checkpoints_folder)
+                        cb_string = "callbacks.ModelCheckpoint(filepath=r'" + str(self.ManagedObject.FileManager.output_checkpoints_files)+"')"
+                    elif cb == "TensorBoard":
+                        self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_tensorboard_log_dir)
+                        cb_string = "callbacks.TensorBoard(log_dir=r'" + str(self.ManagedObject.FileManager.output_tensorboard_log_dir)+"')"
+                    elif cb == "PlotLossesKeras":
+                        try:
+                            from livelossplot import PlotLossesKerasTF as PlotLossesKeras # type: ignore
+                            from livelossplot.outputs import MatplotlibPlot # type: ignore
+                            self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_figures_folder)
+                            cb_string = "PlotLossesKeras(outputs=[MatplotlibPlot(figpath = r'" + str(self.ManagedObject.FileManager.output_figure_plot_losses_keras_file)+"')])"
+                        except:
+                            print(header_string_2, "\nNo module named 'livelossplot's. Continuing without.\nIf you wish to plot the loss in real time please install 'livelossplot'.\n")
+                            cb_string = None
                     else:
-                        cb_string = "callbacks." + \
-                            cb.replace("callbacks.", "")+"()"
-            elif isinstance(cb,dict):
-                try:
-                    name = cb["name"]
-                except:
-                    raise Exception("The layer ", str(cb), " has unspecified name.")
-                try:
-                    args = cb["args"]
-                except:
-                    args = []
-                try:
-                    kwargs = cb["kwargs"]
-                except:
-                    kwargs = {}
-                if name == "ModelCheckpoint":
-                    self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_checkpoints_folder)
-                    kwargs["filepath"] = self.ManagedObject.FileManager.output_checkpoints_files
-                elif name == "TensorBoard":
-                    self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_tensorboard_log_dir)
-                    #utils.check_create_folder(path.join(self.output_folder, "tensorboard_logs/fit"))
-                    kwargs["log_dir"] = self.ManagedObject.FileManager.output_tensorboard_log_dir
-                elif name == "PlotLossesKeras":
-                    self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_figure_plot_losses_keras_file)
-                    kwargs["outputs"] = "[MatplotlibPlot(figpath = r'" + self.ManagedObject.FileManager.output_figure_plot_losses_keras_file+"')]"
-                for key, value in kwargs.items():
-                    if key == "monitor" and type(value) == str:
-                        if "val_" in value:
-                            value = value.split("val_")[1]
-                        if value == "loss":
-                            value = "val_loss"
-                        # else:
-                        #    value = "val_" + custom_losses.metric_name_unabbreviate(value)
-                cb_string = utils.build_method_string_from_dict(
-                    "callbacks", name, args, kwargs)
-            else:
-                cb_string = None
-                print("WARNING: Invalid input for callback: ", cb, ". The callback will not be added to the model.", show = True)
-            if cb_string is not None:
-                try:
-                    eval(cb_string)
-                    self._callbacks_strings.append(cb_string)
-                    print("\tAdded callback:", cb_string, ".\n", show = verbose)
-                except Exception as e:
-                    print("Could not add callback", cb_string, ".\n", show = verbose)
-                    print(e)
-            else:
-                print("Could not set callback", cb_string, "\n", show = verbose)
-        for cb_string in self.callbacks_strings:
-            self._callbacks.append(eval(cb_string))
-        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "callbacks set",
-                                                               "callbacks": self.callbacks_strings}}
+                        if "(" in cb:
+                            cb_string = "callbacks."+cb.replace("callbacks.", "")
+                        else:
+                            cb_string = "callbacks." + \
+                                cb.replace("callbacks.", "")+"()"
+                elif isinstance(cb,dict):
+                    try:
+                        name = cb["name"]
+                    except:
+                        raise Exception("The layer ", str(cb), " has unspecified name.")
+                    try:
+                        args = cb["args"]
+                    except:
+                        args = []
+                    try:
+                        kwargs = cb["kwargs"]
+                    except:
+                        kwargs = {}
+                    if name == "ModelCheckpoint":
+                        self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_checkpoints_folder)
+                        kwargs["filepath"] = self.ManagedObject.FileManager.output_checkpoints_files
+                    elif name == "TensorBoard":
+                        self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_tensorboard_log_dir)
+                        #utils.check_create_folder(path.join(self.output_folder, "tensorboard_logs/fit"))
+                        kwargs["log_dir"] = self.ManagedObject.FileManager.output_tensorboard_log_dir
+                    elif name == "PlotLossesKeras":
+                        try:
+                            from livelossplot import PlotLossesKerasTF as PlotLossesKeras # type: ignore
+                            from livelossplot.outputs import MatplotlibPlot # type: ignore
+                            self.ManagedObject.FileManager.check_create_folder(self.ManagedObject.FileManager.output_figures_folder)
+                            kwargs["outputs"] = "[MatplotlibPlot(figpath = r'" + self.ManagedObject.FileManager.output_figure_plot_losses_keras_file+"')]"
+                        except:
+                            print(header_string_2, "\nNo module named 'livelossplot's. Continuing without.\nIf you wish to plot the loss in real time please install 'livelossplot'.\n")
+                    for key, value in kwargs.items():
+                        if key == "monitor" and type(value) == str:
+                            if "val_" in value:
+                                value = value.split("val_")[1]
+                            if value == "loss":
+                                value = "val_loss"
+                            # else:
+                            #    value = "val_" + custom_losses.metric_name_unabbreviate(value)
+                    cb_string = utils.build_method_string_from_dict(
+                        "callbacks", name, args, kwargs)
+                else:
+                    cb_string = None
+                    print("WARNING: Invalid input for callback: ", cb, ". The callback will not be added to the model.", show = True)
+                if cb_string is not None:
+                    try:
+                        eval(cb_string)
+                        self._callbacks_strings.append(cb_string)
+                        print("\tAdded callback:", cb_string, ".\n", show = verbose)
+                    except Exception as e:
+                        print("Could not add callback", cb_string, ".\n", show = verbose)
+                        print(e)
+                else:
+                    print("Could not set callback", cb_string, "\n", show = verbose)
+            for cb_string in self.callbacks_strings:
+                self._callbacks.append(eval(cb_string))
+            self.ManagedObject.log = {utils.generate_timestamp(): {"action": "callbacks set",
+                                                                   "callbacks": self.callbacks_strings}}
+        print(strategy_header_string,"\nExecuting within strategy context:",self.Resources.strategy,".\n",show=verbose)        
+        self.Resources.strategy_executor(func_to_run())
+        print("\nExecution in strategy context done.",show=verbose)
+        print(strategy_header_string,"\n",show=verbose)
         
     def __set_tf_objects(self, verbose: Optional[IntBool] = None) -> None:
         """
@@ -1457,16 +1564,14 @@ class NFTrainer(ObjectManager, Verbosity):
                 See :argument:`verbose <common_methods_arguments.verbose>`.
         """
         _, verbose_sub = self.get_verbosity(verbose)
-        # self.__set_layers(verbose=verbose_sub)
         # this defines the string optimizer_string and object optimizer
         self.__set_optimizer(verbose = verbose_sub)
-        # self.__set_loss(verbose=verbose_sub)  # this defines the string loss_string and the object loss
+        # this defines the string loss_string and the object loss
+        self.__set_loss(verbose=verbose_sub)
         # this defines the lists metrics_strings and metrics
         self.__set_metrics(verbose = verbose_sub)
         # this defines the lists callbacks_strings and callbacks
         self.__set_callbacks(verbose = verbose_sub)
-        # set loss
-        self._loss = minus_logprob
 
     def __set_epochs_to_run(self):
         """
@@ -1486,46 +1591,49 @@ class NFTrainer(ObjectManager, Verbosity):
         """
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
-        print(header_string_2,"\nDefining Keras model.\n", show = verbose)
-        start = timer()
-        x_ = Input(shape=(self.ManagedObject.ndims,), dtype=self.ManagedObject.Data.InputData.dtype_required)
-        log_prob_ = self.ManagedObject.TrainableDistribution.distribution.log_prob(x_)
-        self._NFModel = Model(x_, log_prob_)
-        self._model_params = int(self.NFModel.count_params())
-        self._model_trainable_params = int(np.sum([K.count_params(p) for p in self.NFModel.trainable_weights]))
-        self._model_non_trainable_params = int(np.sum([K.count_params(p) for p in self.NFModel.non_trainable_weights]))
-        summary_list = []
-        self.NFModel.summary(print_fn=lambda x: summary_list.append(x.replace("\"","'")))
-        end = timer()
-        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "Keras Model defined",
-                                                               "model summary": summary_list}}
-        print("NFModel defined in", str(end-start),"s.\n", show = verbose)
+        def func_to_run():
+            print(header_string_2,"\nDefining Keras model.\n", show = verbose)
+            start = timer()
+            x_ = Input(shape=(self.ManagedObject.ndims,), dtype=self.ManagedObject.Data.InputData.dtype_required)
+            log_prob_ = self.ManagedObject.TrainableDistribution.distribution.log_prob(x_)
+            self._NFModel = Model(x_, log_prob_)
+            model_params = int(self.NFModel.count_params())
+            model_trainable_params = int(np.sum([K.count_params(p) for p in self.NFModel.trainable_weights]))
+            model_non_trainable_params = int(np.sum([K.count_params(p) for p in self.NFModel.non_trainable_weights]))
+            self._model_params = {"total": model_params, "trainable": model_trainable_params, "non_trainable": model_non_trainable_params}
+            summary_list = []
+            self.NFModel.summary(print_fn=lambda x: summary_list.append(x.replace("\"","'")))
+            end = timer()
+            self.ManagedObject.log = {utils.generate_timestamp(): {"action": "Keras Model defined",
+                                                                   "model summary": summary_list,
+                                                                   "gpu mode": self.Resources.gpu_mode,
+                                                                   "device id": self.Resources.training_device}}
+            print("NFModel defined in", str(end-start),"s.\n", show = verbose)
+        print(strategy_header_string,"\nExecuting within strategy context:",self.Resources.strategy,".\n",show=verbose)        
+        self.Resources.strategy_executor(func_to_run())
+        print("\nExecution in strategy context done.",show=verbose)
+        print(strategy_header_string,"\n",show=verbose)
 
     def model_compile(self, verbose: Optional[IntBool] = None) -> None:
         """
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
-        print(header_string_2,"\nCompiling Keras model\n", show = verbose)
-        # Compile model
-        start = timer()
-        print(header_string_1,"\nSetting loss.\n", show = verbose)
-        print("The loss is automatically set to minus the log-probability.\n")
-        #loss = lambda _, log_prob: -log_prob
-        self.__set_tf_objects(verbose = verbose_sub)
-        #self._optimizer = eval(self.optimizer_string)
-        #self._metrics = []
-        #for metric_string in self.metrics_strings:
-        #    self._metrics.append(eval(metric_string))
-        #self._callbacks = []
-        #for cb_string in self.callbacks_strings:
-        #    self._callbacks.append(eval(cb_string))
-        self.NFModel.compile(loss=self.loss, optimizer=self.optimizer, metrics=self.metrics, **self.model_compile_kwargs)
-        end = timer()
-        self.ManagedObject.log = {utils.generate_timestamp(): {"action": "Keras Model compiled"}}
-        print("NFModel",self.ManagedObject.name,"compiled in",str(end-start),"s.\n", show = verbose)
+        def func_to_run():
+            print(header_string_2,"\nCompiling Keras model\n", show = verbose)
+            # Compile model
+            start = timer()
+            self.NFModel.compile(loss=self.loss, optimizer=self.optimizer, metrics=self.metrics, **self.model_compile_kwargs)
+            end = timer()
+            self.ManagedObject.log = {utils.generate_timestamp(): {"action": "Keras Model compiled",
+                                                                   "gpu mode": self.Resources.gpu_mode,
+                                                                   "device id": self.Resources.training_device}}
+            print("NFModel",self.ManagedObject.name,"compiled in",str(end-start),"s.\n", show = verbose)
+        print(strategy_header_string,"\nExecuting within strategy context:",self.Resources.strategy,".\n",show=verbose)        
+        self.Resources.strategy_executor(func_to_run())
+        print("\nExecution in strategy context done.",show=verbose)
+        print(strategy_header_string,"\n",show=verbose)
 
     def model_build(self,
-                    gpu:  Union[str,int] = "auto", 
                     force: bool = False,
                     verbose: Optional[IntBool] = None
                    ) -> None:
@@ -1533,12 +1641,6 @@ class NFTrainer(ObjectManager, Verbosity):
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
         print(header_string_1,"\nDefining and compiling Keras model\n", show = verbose)
-        if isinstance(gpu,str):
-            if gpu == "auto":
-                gpu = 0
-            else:
-                print("WARNING: invalid 'gpu' input argument. Proceeding with 'gpu=0'.")
-                gpu = 0
         try:
             self.NFModel
             create = False
@@ -1555,56 +1657,46 @@ class NFTrainer(ObjectManager, Verbosity):
         if not create and not compile:
             print("Model already built.", show = verbose)
             return
-        if self.Resources.gpu_mode:
-            if gpu > len(self.Resources.available_gpus):
-                print("gpu", gpu, "does not exist. Continuing on gpu '0'.\n", show = verbose)
-                gpu = 0
-            self._training_device = self.Resources.available_gpus[gpu]
-            if self.training_device:
-                device_id = self.training_device[0]
-            else:
-                device_id = None
-        else:
-            if gpu != "auto":
-                print("GPU mode selected without any active GPU. Proceeding with CPU support.\n", show = verbose)
-            self._training_device = self.Resources.available_cpus[0]
-            if self.training_device:
-                device_id = self.training_device
-            else:
-                device_id = None
-        if device_id is None:
-            if create:
-                self.model_define(verbose=verbose_sub)
-            if compile:
-                self.model_compile(verbose=verbose_sub)
-        else:
-            strategy = tf.distribute.OneDeviceStrategy(device=device_id)
-            print("Building NFModel", self.ManagedObject.name,"on device", self.training_device,".\n", show = verbose)
-            with strategy.scope():
-                # Rebuild Chain in current scope
-                chain_name = self.ManagedObject._model_bijector_inputs["name"]+"Chain"
-                self.ManagedObject._Chain = eval(chain_name)(model_define_inputs = self.ManagedObject._model_define_inputs,
-                                                             model_bijector_inputs = self.ManagedObject._model_bijector_inputs,
-                                                             model_chain_inputs = self.ManagedObject._model_chain_inputs,
-                                                             verbose = verbose_sub)
-                # Rebuild TrainableDistribution in current scope
-                self.ManagedObject.BaseDistribution = NFDistribution(nf_main = self.ManagedObject, distribution = self.ManagedObject.base_distribution_inputs)
-                self.ManagedObject.TrainableDistribution = NFDistribution(nf_main = self.ManagedObject, distribution = tfd.TransformedDistribution(self.ManagedObject.BaseDistribution.distribution,self.ManagedObject.Chain))
-                if create:
-                    self.model_define(verbose=verbose_sub)
-                if compile:
-                    self.model_compile(verbose=verbose_sub)
-            self.ManagedObject.log = {utils.generate_timestamp(): {"action": "built tf model",
-                                                                   "gpu mode": self.Resources.gpu_mode,
-                                                                   "device id": device_id}}
+        if create:
+            self.model_define(verbose=verbose_sub)
+        if compile:
+            self.model_compile(verbose=verbose_sub)
+        #if self.Resources.strategy is None:
+        #    if create:
+        #        self.model_define(verbose=verbose_sub)
+        #    if compile:
+        #        self.model_compile(verbose=verbose_sub)
+        #else:
+        #    #self._strategy = tf.distribute.OneDeviceStrategy(device=device_id)
+        #    print("Building NFModel", self.ManagedObject.name,"on device", self.Resources.training_device,".\n", show = verbose)
+        #    with self.Resources.strategy.scope():
+        #        # Rebuild Chain in current scope
+        #        chain_name = self.ManagedObject._model_bijector_inputs["name"]+"Chain"
+        #        self.ManagedObject._Chain = eval(chain_name)(model_define_inputs = self.ManagedObject._model_define_inputs,
+        #                                                     model_bijector_inputs = self.ManagedObject._model_bijector_inputs,
+        #                                                     model_chain_inputs = self.ManagedObject._model_chain_inputs,
+        #                                                     verbose = verbose_sub)
+        #        # Rebuild TrainableDistribution in current scope
+        #        self.ManagedObject.BaseDistribution = NFDistribution(nf_main = self.ManagedObject, distribution = self.ManagedObject.base_distribution_inputs)
+        #        self.ManagedObject.TrainableDistribution = NFDistribution(nf_main = self.ManagedObject, distribution = tfd.TransformedDistribution(self.ManagedObject.BaseDistribution.distribution,self.ManagedObject.Chain))
+        #        if create:
+        #            self.model_define(verbose=verbose_sub)
+        #        if compile:
+        #            self.model_compile(verbose=verbose_sub)
+        #    self.ManagedObject.log = {utils.generate_timestamp(): {"action": "built tf model",
+        #                                                           "gpu mode": self.Resources.gpu_mode,
+        #                                                           "device id": self.Resources.training_device}}
 
-    def model_train(self, verbose: Optional[IntBool] = None) -> None:
+    def model_train(self,
+                    reset_seed: bool = True,
+                    verbose: Optional[IntBool] = None) -> None:
         """
         """
         verbose, verbose_sub = self.get_verbosity(verbose)
         print(header_string_2,"\nTraining Keras model\n", show = verbose)
         # Reset random state
-        utils.reset_random_seeds(self.ManagedObject.seed)
+        if reset_seed:
+            utils.reset_random_seeds(self.ManagedObject.seed)
         start = timer()
         data_manager = self.ManagedObject.Data.DataManager
         train_data = data_manager.TrainData
@@ -1671,10 +1763,10 @@ class NFDistribution(ObjectManager): # type: ignore
     managed_object_name: str = "NFMain"
     def __init__(self,
                  nf_main: NFMain,
-                 distribution: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.AutoCompositeTensorDistribution]] = None
+                 distribution: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.Distribution]] = None
                 ) -> None:
         # Attributes type declarations
-        self._distribution: tfp.distributions.distribution.AutoCompositeTensorDistribution
+        self._distribution: tfp.distributions.distribution.Distribution
         self._distribution_string: str
         self._trainable: bool
         # Initialise parent ObjectManager class
@@ -1687,12 +1779,12 @@ class NFDistribution(ObjectManager): # type: ignore
         self.distribution = distribution
     
     @property
-    def distribution(self) -> Union[Dict[str,Any],str,tfp.distributions.distribution.AutoCompositeTensorDistribution]:
+    def distribution(self) -> Union[Dict[str,Any],str,tfp.distributions.distribution.Distribution]:
         return self._distribution
 
     @distribution.setter
     def distribution(self,
-                     distribution: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.AutoCompositeTensorDistribution]] = None,
+                     distribution: Optional[Union[Dict[str,Any],str,tfp.distributions.distribution.Distribution]] = None,
                     ) -> None:
         self._distribution = None
         self._trainable = False
@@ -1742,9 +1834,9 @@ class NFDistribution(ObjectManager): # type: ignore
                 self._trainable = True
             except:
                 raise Exception("Could not set distribution. The 'distribution' input argument does not have a valid format.")
-        elif isinstance(distribution,tfp.distributions.distribution.AutoCompositeTensorDistribution):
+        elif isinstance(distribution,tfp.distributions.distribution.Distribution):
             #print("Option 4")
-            dist_obj: tfp.distributions.distribution.AutoCompositeTensorDistribution = distribution
+            dist_obj: tfp.distributions.distribution.Distribution = distribution
             try:
                 #eval(dist_obj)
                 dist_string = "tfd."+str(dist_obj.__class__.__name__)+"(**"+str(dist_obj.__dict__['_parameters'])+")"

@@ -20,7 +20,7 @@ from timeit import default_timer as timer
 import math
 import matplotlib.pyplot as plt
 from tensorflow.keras.layers import Conv2D, BatchNormalization,Add,Dense,ReLU,Layer, Conv2D, Reshape,Flatten,Lambda
-from tensorflow.keras import Model, Input,Sequential
+from tensorflow.python.keras import Model, Input,Sequential
 import tensorflow.keras.backend as K
 from tensorflow.keras.callbacks import LambdaCallback
 from statistics import mean,median

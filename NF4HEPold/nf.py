@@ -27,9 +27,9 @@ import pandas as pd
 import seaborn as sns
 import matplotlib
 import matplotlib.pyplot as plt
-from tensorflow.keras import Input
-from tensorflow.keras import backend as K
-from tensorflow.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses
+from tensorflow.python.keras import Input
+from tensorflow.python.keras import backend as K
+from tensorflow.python.keras import layers, initializers, regularizers, constraints, callbacks, optimizers, metrics, losses
 from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.utils import plot_model
 import onnx

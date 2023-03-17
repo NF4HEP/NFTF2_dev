@@ -26,7 +26,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from IPython.display import Image
 
-from tensorflow.keras import Model, Input,Sequential
+from tensorflow.python.keras import Model, Input,Sequential
 from tensorflow.keras.layers import Conv2D, BatchNormalization,Add,Dense,ReLU,Layer, Conv2D, Reshape
 from tensorflow.keras.optimizers import Adam
 from statistics import mean,median

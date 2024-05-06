@@ -1,0 +1,10 @@
+__pycache__
+.DS_Store
+*.h5
+.ipynb_checkpoints
+.mypy_cache
+.vscode
+.VSCodeCounter
+*~
+source/DNNLikelihood_backup
+old
